@@ -1,0 +1,16 @@
+AC_INIT(freevamp.c)
+AM_INIT_AUTOMAKE(freevamp,0.0)
+AM_CONFIG_HEADER(config.h)
+
+if test -f config.options
+then
+  . ./config.options
+fi
+
+dnl Checks for programs.
+AC_PROG_CC
+
+dnl Checks for libraries.
+AM_PATH_GTK_2_0(2.0.0)
+
+AC_OUTPUT(Makefile)

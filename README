@@ -1,0 +1,18 @@
+Free V-AMP
+----------
+
+  Free V-AMP is a program for controlling the Behringer V-AMP 2 modelling
+amplifier.  It is intended to be a free replacement for Behringer's
+"V-AMP Design" program.
+
+  Free V-AMP is written for POSIX-compatible operating systems, such as
+GNU/Linux.  It requires GTK+ version 2.0 or later; see:
+
+    http://www.gtk.org/
+
+for information.
+
+  See the file INSTALL for configuration and installation
+instructions.
+
+  Please send bug reports to Gary Wong <gtw@gnu.org>.
