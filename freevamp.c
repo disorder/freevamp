@@ -3078,7 +3078,7 @@ extern int main( int argc, char *argv[] ) {
    on channels other than a V-AMP */
 /* FIXME add "revert to saved" menu item */
 /* FIXME ask for confirmation when discarding unsaved changes? */
-/* FIXME add other import formats (e.g. sysex) */
+/* FIXME add other import/export formats (e.g. sysex) */
 /* FIXME make "open" read all file formats */
 /* FIXME allow different devices for in and out */
 /* FIXME make the log window global, not part of vamp */
