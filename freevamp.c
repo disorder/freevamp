@@ -159,12 +159,28 @@
 #define MIDI_STATUS 0x80
 #define MIDI_OPERATION 0xF0
 #define MIDI_CHANNEL 0x0F
+#define MIDI_NOTEOFF 0x80
+#define MIDI_NOTEON 0x90
+#define MIDI_AFTERTOUCH 0xA0
 #define MIDI_CTRLCHANGE 0xB0
 #define MIDI_PROGCHANGE 0xC0
+#define MIDI_CHANPRESSURE 0xD0
+#define MIDI_PITCHWHEEL 0xE0
 #define MIDI_SYSTEM 0xF0
 #define MIDI_SYSEX 0xF0
+#define MIDI_MTCQUARTERFRAME 0xF1
+#define MIDI_SONGPOS 0xF2
+#define MIDI_SONGSEL 0xF3
+#define MIDI_TUNEREQ 0xF6
 #define MIDI_SYSEX_END 0xF7
 #define MIDI_SYSREALTIME 0xF8
+#define MIDI_CLOCK 0xF8
+#define MIDI_TICK 0xF9
+#define MIDI_START 0xFA
+#define MIDI_CONTINUE 0xFB
+#define MIDI_STOP 0xFC
+#define MIDI_ACTIVESENSE 0xFE
+#define MIDI_RESET 0xFF
 
 #define PROG_TUNER 0x7F
 
@@ -261,6 +277,27 @@ static char achDefaultParm[ NUM_PARMS ] = {
 };
 
 static preferences pref = { FALSE, TRUE, 100 };
+
+static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
+		     char *szFormat, ... ) {
+    
+    va_list val;
+    char *pch;
+    GtkWidget *pw;
+    int f;
+    
+    va_start( val, szFormat );
+    pch = g_strdup_vprintf( szFormat, val );
+    va_end( val );
+
+    pw = gtk_message_dialog_new( pwParent, GTK_DIALOG_DESTROY_WITH_PARENT,
+				 mt, bt, "%s", pch );
+    g_free( pch );
+    f = gtk_dialog_run( GTK_DIALOG( pw ) );
+    gtk_widget_destroy( pw );
+
+    return f;
+}
 
 static void LogTrimScroll( vamp *pva ) {
 
@@ -428,13 +465,11 @@ static int ReadMIDI( vamp *pva ) {
 
     unsigned char ach[ 1024 ], *pch;
     int n;
-
-    if( pva->h < 0 ) {
-	errno = EBADF;
-	return -1;
-    }
+    static char *aszNote[ 12 ] = {
+	"C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"
+    };
     
-    if( ( n = read( pva->h, ach, sizeof ach ) ) < 0 )
+    if( ( n = read( pva->h, ach, sizeof ach ) ) <= 0 )
 	return -1;
 
     for( pch = ach; n; pch++, n-- ) {
@@ -443,8 +478,36 @@ static int ReadMIDI( vamp *pva ) {
 
 	if( *pch & MIDI_STATUS ) {
 	    if( ( *pch & MIDI_SYSREALTIME ) == MIDI_SYSREALTIME )
-		Log( pva, *pch, "System Real-time" );
-	    else if( pva->nRunningStatus == MIDI_SYSEX &&
+		switch( *pch ) {
+		case MIDI_CLOCK:
+		    Log( pva, *pch, "System Clock" );
+		    break;
+		case MIDI_TICK:
+		    Log( pva, *pch, "System Tick" );
+		    break;
+		case MIDI_START:
+		    Log( pva, *pch, "System Start" );
+		    break;
+		case MIDI_CONTINUE:
+		    Log( pva, *pch, "System Continue" );
+		    break;
+		case MIDI_STOP:
+		    Log( pva, *pch, "System Stop" );
+		    break;
+		case MIDI_ACTIVESENSE:
+		    Log( pva, *pch, "System Active Sense" );
+		    break;
+		case MIDI_RESET:
+		    Log( pva, *pch, "System Clock" );
+		    break;
+		}
+	    else if( *pch == MIDI_TUNEREQ ) {
+		Log( pva, *pch, "System Tune Request" );
+		pva->nRunningStatus = 0;
+		pva->cchCommand = 0;
+		pva->fSysex = FALSE;
+		break;
+	    } else if( pva->nRunningStatus == MIDI_SYSEX &&
 		     *pch == MIDI_SYSEX_END ) {
 		Log( pva, pva->nRunningStatus,
 		     "System Exclusive: %d bytes", pva->cchCommand );;
@@ -463,8 +526,32 @@ static int ReadMIDI( vamp *pva ) {
 	    pva->cchCommand++;
 	    
 	    switch( pva->nRunningStatus & MIDI_OPERATION ) {
+	    case MIDI_NOTEOFF:
+	    case MIDI_NOTEON:
+		if( pva->cchCommand >= 2 ) {
+		    Log( pva, pva->nRunningStatus, "Note %d (%s%d) %s "
+			 "(velocity %d)", pva->achCommand[ 0 ],
+			 aszNote[ pva->achCommand[ 0 ] % 12 ],
+			 pva->achCommand[ 0 ] / 12,
+			 ( ( pva->nRunningStatus & MIDI_OPERATION ) ==
+			   MIDI_NOTEOFF ) || !pva->achCommand[ 1 ] ? "off" :
+			 "on", pva->achCommand[ 1 ] );
+		    pva->cchCommand = 0;
+		}
+		break;
+
+	    case MIDI_AFTERTOUCH:
+		if( pva->cchCommand >= 2 ) {
+		    Log( pva, pva->nRunningStatus, "Note %d (%s%d) aftertouch "
+			 "(pressure %d)", pva->achCommand[ 0 ],
+			 aszNote[ pva->achCommand[ 0 ] % 12 ],
+			 pva->achCommand[ 0 ] / 12,
+			 pva->achCommand[ 1 ] );
+		    pva->cchCommand = 0;
+		}
+		break;
+		
 	    case MIDI_CTRLCHANGE:
-		/* FIXME don't try to interpret events on other channels */
 		if( pva->cchCommand >= 2 ) {
 		    if( pva->achCommand[ 0 ] == CTRL_NAME ) {
 			if( pva->achCommand[ 1 ] < ' ' )
@@ -509,9 +596,49 @@ static int ReadMIDI( vamp *pva ) {
 		pva->cchCommand = 0;
 		break;
 
+	    case MIDI_CHANPRESSURE:
+		Log( pva, pva->nRunningStatus, "Channel pressure %d\n",
+		     pva->achCommand[ 0 ] );
+		pva->cchCommand = 0;
+		break;
+
+	    case MIDI_PITCHWHEEL:
+		if( pva->cchCommand >= 2 ) {
+		    Log( pva, pva->nRunningStatus, "Pitch bend %d (%dc)",
+			 pva->achCommand[ 0 ] | ( pva->achCommand[ 1 ] << 7 ),
+			 ( ( pva->achCommand[ 0 ] |
+			     ( pva->achCommand[ 1 ] << 7 ) ) - 0x2000 )
+			 * 100 / 0x1000 );
+		    pva->cchCommand = 0;
+		}
+		break;
+
+	    case MIDI_MTCQUARTERFRAME:
+		Log( pva, pva->nRunningStatus, "System MTC quarter frame %d\n",
+		     pva->achCommand[ 0 ] );
+		pva->cchCommand = 0;
+		pva->nRunningStatus = 0;
+		break;
+		
+	    case MIDI_SONGPOS:
+		if( pva->cchCommand >= 2 ) {
+		    Log( pva, pva->nRunningStatus, "System Song position %d",
+			 pva->achCommand[ 0 ] |
+			 ( pva->achCommand[ 1 ] << 7 ) );
+		    pva->cchCommand = 0;
+		    pva->nRunningStatus = 0;
+		}
+		break;
+		
+	    case MIDI_SONGSEL:
+		Log( pva, pva->nRunningStatus, "System Song select %d\n",
+		     pva->achCommand[ 0 ] );
+		pva->cchCommand = 0;
+		pva->nRunningStatus = 0;
+		break;
+		
 	    default:
 		/* ignore */
-		/* FIXME log known events */
 	    }
 	}
     }
@@ -522,7 +649,7 @@ static int ReadMIDI( vamp *pva ) {
 typedef struct _sysexstate {
     int cch, cchAlloc, cchExpected, cchOld, fFailed;
     char *pch;
-    GtkWidget *pwProgress;
+    GtkWidget *pwDialog, *pwProgress;
 } sysexstate;
 
 static void HandleSysex( vamp *pva, unsigned char ch, void *p,
@@ -550,7 +677,7 @@ static void HandleSysex( vamp *pva, unsigned char ch, void *p,
     if( ch == MIDI_SYSEX_END ) {
 	/* success */
 	pva->sysex = NULL; /* don't call us again */
-	gtk_main_quit();
+	gtk_dialog_response( GTK_DIALOG( pses->pwDialog ), GTK_RESPONSE_OK );
 	return;
     } else if( !( ch & MIDI_STATUS ) ) {
 	pses->pch[ pses->cch++ ] = ch;
@@ -563,17 +690,7 @@ static void HandleSysex( vamp *pva, unsigned char ch, void *p,
     }
 
     pses->fFailed = TRUE;
-    free( pses->pch );
-    pses->pch = NULL;
-    gtk_main_quit();
-}
-
-static void CancelSysex( GtkWidget *pw, gint n, sysexstate *pses ) {
-
-    pses->fFailed = TRUE;
-    free( pses->pch );
-    pses->pch = NULL;
-    gtk_main_quit();
+    gtk_dialog_response( GTK_DIALOG( pses->pwDialog ), GTK_RESPONSE_REJECT );
 }
 
 static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
@@ -581,6 +698,7 @@ static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
 
     sysexstate ses;
     GtkWidget *pw;
+    int n;
     
     if( pva->h < 0 ) {
 	errno = EBADF;
@@ -593,8 +711,7 @@ static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
     pw = gtk_dialog_new_with_buttons( "Free V-AMP - Progress", pwParent,
 				      GTK_DIALOG_MODAL, GTK_STOCK_CANCEL,
 				      GTK_RESPONSE_REJECT, NULL );
-    g_signal_connect( G_OBJECT( pw ), "response", G_CALLBACK( CancelSysex ),
-		      &ses );
+    ses.pwDialog = pw;
     ses.pwProgress = gtk_progress_bar_new();
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
 		       ses.pwProgress );
@@ -603,20 +720,22 @@ static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
 	pva->pvSysex = &ses;
 	pva->sysex = HandleSysex;
 
-	gtk_main();
-
+	n = gtk_dialog_run( GTK_DIALOG( pw ) );
+	gtk_widget_destroy( pw );
+    
 	pva->pvSysex = NULL;
 	pva->sysex = NULL;
     }
 
-    if( !ses.pch )
+    if( n != GTK_RESPONSE_OK ) {
+	free( ses.pch );
+	ses.pch = NULL;
 	ses.cch = 0;
+    }
     
     if( cb )
 	*cb = ses.cch;
 
-    gtk_widget_destroy( pw );
-    
     return realloc( ses.pch, ses.cch );
 }
 
@@ -1159,11 +1278,15 @@ static void CloseEditor( GtkWidget *pw, gint nResponse, vamp *pva ) {
     char *pchPreset = pva->achPreset[ (int) pva->iProgram ];
     
     if( nResponse == GTK_RESPONSE_APPLY ) {
-	WritePreset( pva, pva->iProgram, pva->achPreset[ PRESET_CURRENT ] );
+	if( pva->h >= 0 ) {
+	    WritePreset( pva, pva->iProgram,
+			 pva->achPreset[ PRESET_CURRENT ] );
     
-	RequestPreset( pva, GTK_WINDOW( pva->pwList ), pva->iProgram,
-		       pchPreset );
-    
+	    RequestPreset( pva, GTK_WINDOW( pva->pwList ), pva->iProgram,
+			   pchPreset );
+	} else
+	    memcpy( pchPreset, pva->achPreset[ PRESET_CURRENT ], NUM_PARMS );
+	    
 	gtk_label_set_text( GTK_LABEL( gtk_bin_get_child( GTK_BIN(
 	    pva->plw->apw[ (int) pva->iProgram ] ) ) ),
 			    PresetName( pchPreset ) );
@@ -1506,6 +1629,43 @@ static void ActivatePreset( GtkWidget *pw, vamp *pva ) {
 	gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( pw ), TRUE );
 }
 
+static int ReadPresetsFile( vamp *pva, GtkWindow *pw, const char *pch ) {
+
+    int h, c;
+    char achPreset[ NUM_PRESETS ][ NUM_PARMS ];
+
+    if( ( h = open( pch, O_RDONLY ) ) < 0 ) {
+	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s", pch,
+		 g_strerror( errno ) );
+	return -1;
+    }
+    
+    if( ( c = read( h, achPreset, sizeof achPreset ) ) < 0 ) {
+	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s", pch,
+		 g_strerror( errno ) );
+	return -1;
+    } else if( c < sizeof achPreset ) {
+	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+		 "%s: not a valid V-AMP presets file" );
+	return -1;
+    }
+
+    if( pva->h < 0 ||
+	Message( pw, GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
+		 "Are you sure you want to overwrite all device presets "
+		 "with the contents of file %s?\n(Please note that you "
+		 "must enter MIDI mode on the V-AMP before continuing.)",
+		 pch ) == GTK_RESPONSE_YES ) {
+	memcpy( pva->achPreset, achPreset, sizeof achPreset );
+
+	WriteAllPresets( pva, achPreset );
+
+	return 0;
+    }
+
+    return -1;
+}
+
 static void Refresh( vamp *pva, guint n, GtkWidget *pwItem );
 
 static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
@@ -1556,10 +1716,8 @@ static void Copy( vamp *pva, guint n, GtkWidget *pwItem ) {
 
 static void Open( vamp *pva, guint n, GtkWidget *pwItem ) {
 
-    GtkWidget *pw, *pwConfirm;
+    GtkWidget *pw;
     const char *pch;
-    int f, h, c;
-    char achPreset[ NUM_PRESETS ][ NUM_PARMS ];
     
     pw = gtk_file_selection_new( "Free V-AMP - Open" );
     
@@ -1567,43 +1725,13 @@ static void Open( vamp *pva, guint n, GtkWidget *pwItem ) {
 				  GTK_WINDOW( pva->pwList ) );
     gtk_widget_show_all( pw );
 
-    while( gtk_dialog_run( GTK_DIALOG( pw ) ) == GTK_RESPONSE_OK ) {
+    if( gtk_dialog_run( GTK_DIALOG( pw ) ) == GTK_RESPONSE_OK ) {
 	pch = gtk_file_selection_get_filename( GTK_FILE_SELECTION( pw ) );
 
-	if( ( h = open( pch, O_RDONLY ) ) < 0 ) {
-	    perror( pch );
-	    break;
-	}
-	
-	if( ( c = read( h, achPreset, sizeof achPreset ) ) < 0 ) {
-	    perror( pch );
-	    close( h );
-	    break;
-	} else if( c < sizeof achPreset ) {
-	    /* FIXME not a preset file */
-	    break;
-	}
-
-	pwConfirm = gtk_message_dialog_new(
-	    GTK_WINDOW( pw ), GTK_DIALOG_DESTROY_WITH_PARENT,
-	    GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
-	    "Are you sure you want to overwrite all device presets with "
-	    "the contents of file %s?\n(Please note that you must "
-	    "enter MIDI mode on the V-AMP before continuing.)", pch );
-	f = gtk_dialog_run( GTK_DIALOG( pwConfirm ) );
-	gtk_widget_destroy( pwConfirm );
-	
-	if( f == GTK_RESPONSE_YES ) {
-	    gtk_widget_destroy( pw );
-	    
-	    memcpy( pva->achPreset, achPreset, sizeof achPreset );
-
-	    WriteAllPresets( pva, achPreset );
-	    return Refresh( pva, n, pwItem );
-	} else
-	    continue;
+	if( !ReadPresetsFile( pva, GTK_WINDOW( pw ), pch ) )
+	    Refresh( pva, n, pwItem );
     }
-
+    
     gtk_widget_destroy( pw );
 }
 
@@ -1635,8 +1763,6 @@ static void Preferences( vamp *pva, guint n, GtkWidget *pwItem ) {
 	*pwHbox;
     char *pchRC;
     FILE *pf;
-    
-    /* FIXME add other prefs (e.g. midi device, channel, ... ) */
     
     pwWindow = gtk_dialog_new_with_buttons( "Free V-AMP - Preferences",
 					    GTK_WINDOW( pva->pwList ),
@@ -1722,10 +1848,10 @@ static void Refresh( vamp *pva, guint n, GtkWidget *pwItem ) {
 
 static void Save( vamp *pva, guint n, GtkWidget *pwItem ) {
 
-    GtkWidget *pw, *pwConfirm;
+    GtkWidget *pw;
     const char *pch;
     struct stat s;
-    int f, h;
+    int h;
     
     pw = gtk_file_selection_new( "Free V-AMP - Save" );
     
@@ -1736,25 +1862,22 @@ static void Save( vamp *pva, guint n, GtkWidget *pwItem ) {
     while( gtk_dialog_run( GTK_DIALOG( pw ) ) == GTK_RESPONSE_OK ) {
 	pch = gtk_file_selection_get_filename( GTK_FILE_SELECTION( pw ) );
 
-	if( !( stat( pch, &s ) ) ) {
-	    pwConfirm = gtk_message_dialog_new(
-		GTK_WINDOW( pw ), GTK_DIALOG_DESTROY_WITH_PARENT,
-		GTK_MESSAGE_QUESTION, GTK_BUTTONS_YES_NO,
-		"Are you sure you want to overwrite file %s?", pch );
-	    f = gtk_dialog_run( GTK_DIALOG( pwConfirm ) );
-	    gtk_widget_destroy( pwConfirm );
-
-	    if( f != GTK_RESPONSE_YES )
-		continue;
-	}
+	if( !( stat( pch, &s ) ) &&
+	    Message( GTK_WINDOW( pw ), GTK_MESSAGE_QUESTION,
+		     GTK_BUTTONS_YES_NO,
+		     "Are you sure you want to overwrite file %s?", pch ) !=
+	    GTK_RESPONSE_YES )
+	    continue;
 
 	if( ( h = open( pch, O_WRONLY | O_CREAT, 0666 ) ) < 0 ) {
-	    perror( pch );
+	    Message( GTK_WINDOW( pw ), GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+		     "%s: %s", pch, g_strerror( errno ) );
 	    break;
 	}
 	
 	if( write( h, pva->achPreset, NUM_PRESETS * NUM_PARMS ) < 0 )
-	    perror( pch );
+	    Message( GTK_WINDOW( pw ), GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+		     "%s: %s", pch, g_strerror( errno ) );
 
 	close( h );
 	break;
@@ -1772,9 +1895,9 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
     int i;
     static GtkItemFactoryEntry aife[] = {
 	{ "/_File", NULL, NULL, 0, "<Branch>" },
-	{ "/_File/_Open", "<control>O", Open, 0, "<StockItem>",
+	{ "/_File/_Open...", "<control>O", Open, 0, "<StockItem>",
 	  GTK_STOCK_OPEN },
-	{ "/_File/_Save", "<control>S", Save, 0, "<StockItem>",
+	{ "/_File/_Save...", "<control>S", Save, 0, "<StockItem>",
 	  GTK_STOCK_SAVE },
 	{ "/_File/-", NULL, NULL, 0, "<Separator>" },
 	{ "/_File/_Refresh", "<control>R", Refresh, 0, "<StockItem>",
@@ -1788,7 +1911,7 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
 	{ "/_Edit/_Paste", "<control>V", Paste, 0, "<StockItem>",
 	  GTK_STOCK_PASTE },
 	{ "/_Edit/-", NULL, NULL, 0, "<Separator>" },
-	{ "/_Edit/P_references", NULL, Preferences, 0, "<StockItem>",
+	{ "/_Edit/P_references...", NULL, Preferences, 0, "<StockItem>",
 	  GTK_STOCK_PREFERENCES },
 	{ "/_Help", NULL, NULL, 0, "<Branch>" },
 	{ "/_Help/About Free V-AMP", NULL, About, 0, "<StockItem>",
@@ -1930,7 +2053,18 @@ static void HandleProgramChange( vamp *pva, char iProgram ) {
 
 static gboolean ReadIOC( GIOChannel *piocSource, GIOCondition ioc,
 			  vamp *pva ) {
-    ReadMIDI( pva );
+    
+    if( ReadMIDI( pva ) < 0 ) {
+	Message( pva->pwList ? GTK_WINDOW( pva->pwList ) : NULL,
+		 GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
+		 "%s: %s", pva->szMidiDevice, g_strerror( errno ) );
+
+	close( pva->h );
+	pva->h = -1;
+	
+	return FALSE;
+    }
+
     return TRUE;
 }
 
@@ -1994,7 +2128,7 @@ extern int main( int argc, char *argv[] ) {
 
 	case 'h':
 	    /* help */
-	    printf( "Usage: %s [option ...]\n"
+	    printf( "Usage: %s [option ...] [preset file]\n"
 		    "Options:\n"
 		    "  -c C, --channel=C  Use MIDI channel C\n"
 		    "  -d D, --device=D   Use MIDI device D\n"
@@ -2019,10 +2153,15 @@ extern int main( int argc, char *argv[] ) {
 	    return EXIT_FAILURE;
 	}
 
+    if( argc > optind + 1 )
+	fprintf( stderr, "%s: only one preset file may be specified\n",
+		 argv[ 0 ] );
+    
     if( !va.szMidiDevice )
 	va.h = -1;
     else if( ( va.h = open( va.szMidiDevice, O_RDWR ) ) < 0 ) {
-	perror( va.szMidiDevice );
+	Message( NULL, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s",
+		 va.szMidiDevice, g_strerror( errno ) );
 	va.szMidiDevice = NULL;
     } else {
 	va.pioc = g_io_channel_unix_new( va.h );
@@ -2036,7 +2175,9 @@ extern int main( int argc, char *argv[] ) {
 	va.h = -1;
     }
     
-    if( RequestAllPresets( &va, NULL ) )
+    if( argv[ optind ] && !ReadPresetsFile( &va, NULL, argv[ optind ] ) )
+	;
+    else if( RequestAllPresets( &va, NULL ) )
 	for( i = 0; i < NUM_PRESETS; i++ )
 	    memcpy( va.achPreset[ i ], achDefaultParm, NUM_PARMS );
 
@@ -2045,13 +2186,16 @@ extern int main( int argc, char *argv[] ) {
     g_signal_connect( pw, "destroy", G_CALLBACK( gtk_main_quit ),
 		      NULL );
 
-    /* FIXME handle files given on command line */
-    
     gtk_main();
     
     return EXIT_SUCCESS;
 }
 
-/* FIXME implement error handling throughout! */
+/* FIXME when logging MIDI events, don't interpret controller/program names
+   on channels other than a V-AMP */
+/* FIXME remember filename, and distinguish save/save as */
 /* FIXME import/export patches (.vlb and sysex) */
 /* FIXME add printing */
+/* FIXME allow different devices for in and out */
+/* FIXME make the log window global, not part of vamp */
+/* FIXME add other prefs (e.g. midi device, channel, ... ) */
