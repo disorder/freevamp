@@ -3,6 +3,19 @@
  *
  * by Gary Wong <gtw@gnu.org>, 2002.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  * $Id$
  */
 
@@ -13,16 +26,21 @@
 
 #include "config.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <gtk/gtk.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "fvicon.h"
+#include "getopt.h"
+
+#define RCFILE ".freevamprc"
 
 #define CTRL_WAH_PEDAL 1
 #define CTRL_VOLUME_PEDAL 7
@@ -126,6 +144,7 @@
 #define PRESETS_PER_BANK 5
 #define NUM_PRESETS (NUM_BANKS * PRESETS_PER_BANK)
 #define PRESET_CURRENT 0x7F
+#define PRESET_TUNER 0x7F
 
 #define CMD_IDENTIFY_DEV 0x01
 #define CMD_IDENTIFY_RESPONSE 0x02
@@ -139,6 +158,7 @@
 
 #define MIDI_STATUS 0x80
 #define MIDI_OPERATION 0xF0
+#define MIDI_CHANNEL 0x0F
 #define MIDI_CTRLCHANGE 0xB0
 #define MIDI_PROGCHANGE 0xC0
 #define MIDI_SYSTEM 0xF0
@@ -159,21 +179,27 @@ typedef struct _vamp {
     int h; /* MIDI device file descriptor */
     GIOChannel *pioc;
     char *szMidiDevice, *szDevice;
-    char nDeviceID, nModelID, iChannel, iProgram, nRunningStatus;
-    char achPreset[ NUM_PRESETS ][ NUM_PARMS ];
+    unsigned char nDeviceID, nModelID, iChannel, iProgram, nRunningStatus;
+    char achPreset[ PRESET_CURRENT + 1 ][ NUM_PARMS ];
     char achClipboard[ NUM_PARMS ];
     int fClipboard, fSysex;
     char achCommand[ 3 ];
     int cchCommand;
-    GtkWidget *pwEditor, *pwList;
+    GtkWidget *pwEditor, *pwList, *pwLog, *pwLogList;
+    GtkListStore *plsLog;
     GtkAccelGroup *pag;
     struct _listwindow *plw;
     struct _editorwindow *pew;
     void *pvSysex;
     void (*control)( struct _vamp *pv, char iController, char nValue );
     void (*program)( struct _vamp *pv, char iProgram );
-    void (*sysex)( struct _vamp *pv, unsigned char n, void *p );
+    void (*sysex)( struct _vamp *pv, unsigned char n, void *p,
+		   int cRemaining );
 } vamp;
+
+typedef struct _preferences {
+    int fLog, fLogScroll, cLogMax;
+} preferences;
 
 static char *aszPreEffectsName[] = { "None", "Compressor", "Auto wah", NULL };
 static char *aszModulationName[] = { "Rotary", "Phaser", "Tremolo",
@@ -234,6 +260,170 @@ static char achDefaultParm[ NUM_PARMS ] = {
     'U','n','n','a','m','e','d',' ',' ',' ',' ',' ',' ',' ',' ',' '
 };
 
+static preferences pref = { FALSE, TRUE, 100 };
+
+static void LogTrimScroll( vamp *pva ) {
+
+    int c;
+    GtkAdjustment *padj;
+    GtkTreeIter ti;
+    
+    if( !pva->plsLog )
+	return;
+    
+    for( c = gtk_tree_model_iter_n_children( GTK_TREE_MODEL( pva->plsLog ),
+					     NULL ) - pref.cLogMax;
+	 c > 0; c-- ) {
+	gtk_tree_model_get_iter_first( GTK_TREE_MODEL( pva->plsLog ),
+				       &ti );
+	gtk_list_store_remove( pva->plsLog, &ti );
+    }
+
+    if( pref.fLogScroll ) {
+	padj = gtk_tree_view_get_vadjustment( GTK_TREE_VIEW(
+	    pva->pwLogList ) );
+	gtk_adjustment_set_value( padj, G_MAXDOUBLE );
+    }
+}
+
+static void Log( vamp *pva, unsigned char chStatus, char *szFormat, ... ) {
+
+    char sz[ 1024 ], szStatus[ 3 ], szChannel[ 4 ];
+    va_list val;
+    GtkTreeIter ti;
+
+    if( !pva->plsLog )
+	return;
+    
+    va_start( val, szFormat );
+    vsnprintf( sz, sizeof sz, szFormat, val );
+    va_end( val );
+
+    if( ( chStatus & MIDI_OPERATION ) == MIDI_SYSTEM )
+	strcpy( szChannel, "N/A" );
+    else
+	sprintf( szChannel, "%d", ( chStatus & MIDI_CHANNEL ) + 1 );
+
+    sprintf( szStatus, "%02X", chStatus );
+    
+    gtk_list_store_append( pva->plsLog, &ti );
+    gtk_list_store_set( pva->plsLog, &ti, 0, pva->szMidiDevice, 1, szChannel,
+			2, szStatus, 3, sz, -1 );
+
+    LogTrimScroll( pva );
+}
+
+static char *ControllerName( unsigned char i ) {
+
+    switch( i ) {
+    case CTRL_WAH_PEDAL:
+	return "Wah Pedal";
+    case CTRL_VOLUME_PEDAL:
+	return "Volume Pedal";
+    case CTRL_AMP_GAIN:
+	return "Amp Gain";
+    case CTRL_AMP_TREBLE:
+	return "Amp Treble";
+    case CTRL_AMP_MID:
+	return "Amp Mid";
+    case CTRL_AMP_BASS:
+	return "Amp Bass";
+    case CTRL_AMP_VOL:
+	return "Amp Vol";
+    case CTRL_AMP_PRESENCE:
+	return "Presence";
+    case CTRL_REVERB_MIX:
+	return "Reverb Mix";
+    case CTRL_AMP_TYPE_DEFAULT:
+	return "Amp Type with default cabinet";
+    case CTRL_FX_TYPE_DEFAULT:
+	return "Fx Type with defaults";
+    case CTRL_FX:
+	return "Fx Enable";
+    case CTRL_REVERB:
+	return "Reverb Enable";
+    case CTRL_CABINET_TYPE:
+	return "Cabinet Type";
+    case CTRL_REVERB_TYPE:
+	return "Reverb Type";
+    case CTRL_NOISE_GATE:
+	return "Noise Gate Level";
+    case CTRL_DRIVE:
+	return "Drive";
+    case CTRL_WAH:
+	return "Wah position";
+    case CTRL_PRE_FX_TYPE:
+	return "pre Effect Type";
+    case CTRL_PRE_FX_1:
+	return "pre Effect 1";
+    case CTRL_PRE_FX_2:
+	return "pre Effect 2";
+    case CTRL_PRE_FX_3:
+	return "pre Effect 3";
+    case CTRL_PRE_FX_4:
+	return "pre Effect 4";
+    case CTRL_DELAY_TYPE:
+	return "Delay Type";
+    case CTRL_DELAY_TIME_HI:
+	return "Delay Time hi";
+    case CTRL_DELAY_TIME_LO:
+	return "Delay Time lo";
+    case CTRL_DELAY_SPREAD:
+	return "Delay Spread";
+    case CTRL_DELAY_FEEDBACK:
+	return "Delay Feedback";
+    case CTRL_DELAY_MIX:
+	return "Delay Mix";
+    case CTRL_POST_FX_MODE:
+	return "post Fx Mode";
+    case CTRL_POST_FX_1:
+	return "post Fx 1";
+    case CTRL_POST_FX_2:
+	return "post Fx 2";
+    case CTRL_POST_FX_3:
+	return "post Fx 3";
+    case CTRL_POST_FX_MIX:
+	return "post Fx Mix";
+    case CTRL_FX_ASSIGN:
+	return "Assign Effects";
+    case CTRL_AMP_TYPE:
+	return "Amp Type w/o cabinet change";
+    case CTRL_TAP:
+	return "Tap";
+    case CTRL_REQUEST:
+	return "Request Controls";
+    case CTRL_NAME:
+	return "Preset Name";
+    case CTRL_TUNER_VOLUME:
+	return "Tuner Bypass Volume";
+    case CTRL_TUNER_FREQ:
+	return "Tuner Centre Frequency";
+    case CTRL_CONFIG:
+	return "Configuration";
+    case CTRL_LIVE_EQ_TREBLE:
+	return "Live EQ Treble";
+    case CTRL_LIVE_EQ_MID:
+	return "Live EQ Mid";
+    case CTRL_LIVE_EQ_BASS:
+	return "Live EQ Bass";
+    default:
+	return "unknown";
+    }
+}
+
+static char *PresetName( char *achPreset ) {
+
+    static char ach[ 17 ];
+    char *pch;
+    
+    memcpy( ach, &achPreset[ PARM_PRESET_NAME ], PARM_PRESET_LEN );
+    ach[ 16 ] = 0;
+    for( pch = ach + 15; *pch == ' '; pch-- )
+	*pch = 0;
+
+    return ach;
+}
+
 static int ReadMIDI( vamp *pva ) {
 
     unsigned char ach[ 1024 ], *pch;
@@ -249,21 +439,51 @@ static int ReadMIDI( vamp *pva ) {
 
     for( pch = ach; n; pch++, n-- ) {
 	if( pva->fSysex && pva->sysex )
-	    pva->sysex( pva, *pch, pva->pvSysex );
+	    pva->sysex( pva, *pch, pva->pvSysex, n - 1 );
 
 	if( *pch & MIDI_STATUS ) {
-	    if( ( *pch & MIDI_SYSREALTIME ) != MIDI_SYSREALTIME ) {
+	    if( ( *pch & MIDI_SYSREALTIME ) == MIDI_SYSREALTIME )
+		Log( pva, *pch, "System Real-time" );
+	    else if( pva->nRunningStatus == MIDI_SYSEX &&
+		     *pch == MIDI_SYSEX_END ) {
+		Log( pva, pva->nRunningStatus,
+		     "System Exclusive: %d bytes", pva->cchCommand );;
+		pva->nRunningStatus = 0;
+		pva->cchCommand = 0;
+		pva->fSysex = FALSE;
+	    } else {
 		pva->nRunningStatus = *pch;
 		pva->cchCommand = 0;
 		pva->fSysex = *pch == MIDI_SYSEX;
 	    }
 	} else {
 	    if( pva->cchCommand < 3 )
-		pva->achCommand[ pva->cchCommand++ ] = *pch;
+		pva->achCommand[ pva->cchCommand ] = *pch;
+
+	    pva->cchCommand++;
 	    
 	    switch( pva->nRunningStatus & MIDI_OPERATION ) {
 	    case MIDI_CTRLCHANGE:
+		/* FIXME don't try to interpret events on other channels */
 		if( pva->cchCommand >= 2 ) {
+		    if( pva->achCommand[ 0 ] == CTRL_NAME ) {
+			if( pva->achCommand[ 1 ] < ' ' )
+			    Log( pva, pva->nRunningStatus,
+				 "Controller %d (%s): position %d",
+				 pva->achCommand[ 0 ],
+				 ControllerName( pva->achCommand[ 0 ] ),
+				 pva->achCommand[ 1 ] );
+			else
+			    Log( pva, pva->nRunningStatus,
+				 "Controller %d (%s): character '%c'",
+				 pva->achCommand[ 0 ],
+				 ControllerName( pva->achCommand[ 0 ] ),
+				 pva->achCommand[ 1 ] );
+		    } else
+			Log( pva, pva->nRunningStatus,
+			     "Controller %d (%s): %d", pva->achCommand[ 0 ],
+			     ControllerName( pva->achCommand[ 0 ] ),
+			     pva->achCommand[ 1 ] );
 		    pva->control( pva, pva->achCommand[ 0 ],
 				  pva->achCommand[ 1 ] );
 		    pva->cchCommand = 0;
@@ -271,12 +491,27 @@ static int ReadMIDI( vamp *pva ) {
 		break;
 		
 	    case MIDI_PROGCHANGE:
+		if( pva->achCommand[ 0 ] < NUM_PRESETS )
+		    Log( pva, pva->nRunningStatus,
+			 "Program %d (%d%c, %s)", pva->achCommand[ 0 ],
+			 pva->achCommand[ 0 ] / PRESETS_PER_BANK + 1,
+			 'A' + ( pva->achCommand[ 0 ] % PRESETS_PER_BANK ),
+			 PresetName( pva->achPreset[
+			     (int) pva->achCommand[ 0 ] ] ) );
+		else if( pva->achCommand[ 0 ] == PRESET_TUNER )
+		    Log( pva, pva->nRunningStatus,
+			 "Program %d (Tuner)", pva->achCommand[ 0 ] );
+		else
+		    Log( pva, pva->nRunningStatus,
+			 "Program %d (unknown)", pva->achCommand[ 0 ] );
+		    
 		pva->program( pva, pva->achCommand[ 0 ] );
 		pva->cchCommand = 0;
 		break;
 
 	    default:
 		/* ignore */
+		/* FIXME log known events */
 	    }
 	}
     }
@@ -290,26 +525,33 @@ typedef struct _sysexstate {
     GtkWidget *pwProgress;
 } sysexstate;
 
-static void HandleSysex( vamp *pva, unsigned char ch, void *p ) {
+static void HandleSysex( vamp *pva, unsigned char ch, void *p,
+			 int cRemaining ) {
 
     sysexstate *pses = p;
 
+    if( !cRemaining ) {
+	if( pses->cchExpected )
+	    gtk_progress_bar_set_fraction(
+		GTK_PROGRESS_BAR( pses->pwProgress ),
+		(double) pses->cch / pses->cchExpected );
+	else
+	    gtk_progress_bar_pulse( GTK_PROGRESS_BAR( pses->pwProgress ) );
+
+	while( gtk_events_pending() )
+	  gtk_main_iteration();
+    }
+
+    /* we need to recheck pses->fFailed, since it may have been modified
+       in gtk_main_iteration() above */
     if( pses->fFailed )
 	return;
-    
-    pses->cch++;
-
-    if( pses->cchExpected )
-	gtk_progress_bar_set_fraction( GTK_PROGRESS_BAR( pses->pwProgress ),
-				       (double) pses->cch /
-				       pses->cchExpected );
-    else
-	gtk_progress_bar_pulse( GTK_PROGRESS_BAR( pses->pwProgress ) );
 
     if( ch == MIDI_SYSEX_END ) {
 	/* success */
 	pva->sysex = NULL; /* don't call us again */
 	gtk_main_quit();
+	return;
     } else if( !( ch & MIDI_STATUS ) ) {
 	pses->pch[ pses->cch++ ] = ch;
 
@@ -326,51 +568,43 @@ static void HandleSysex( vamp *pva, unsigned char ch, void *p ) {
     gtk_main_quit();
 }
 
-static gboolean SysexTimeout( gpointer p ) {
+static void CancelSysex( GtkWidget *pw, gint n, sysexstate *pses ) {
 
-    sysexstate *pses = p;
-
-    if( pses->cch == pses->cchOld ) {
-	pses->fFailed = TRUE;
-	free( pses->pch );
-	pses->pch = NULL;
-	gtk_main_quit();
-    } else
-	pses->cchOld = pses->cch;
-
-    return TRUE;
+    pses->fFailed = TRUE;
+    free( pses->pch );
+    pses->pch = NULL;
+    gtk_main_quit();
 }
 
 static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
 				 int cbExpected ) {
 
     sysexstate ses;
-    GtkWidget *pw, *pwProgress;
-    int idTimeout;
+    GtkWidget *pw;
     
     if( pva->h < 0 ) {
 	errno = EBADF;
 	return NULL;
     }
-
-    pw = gtk_dialog_new_with_buttons( "Free V-AMP - Progress", pwParent,
-				      GTK_DIALOG_MODAL, GTK_STOCK_CANCEL,
-				      GTK_RESPONSE_REJECT, NULL );
-    pwProgress = gtk_progress_bar_new();
-    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ), pwProgress );
-    gtk_widget_show_all( pw );
 	
     ses.cch = ses.cchOld = 0;
     ses.cchExpected = cbExpected;
     ses.fFailed = FALSE;
+    pw = gtk_dialog_new_with_buttons( "Free V-AMP - Progress", pwParent,
+				      GTK_DIALOG_MODAL, GTK_STOCK_CANCEL,
+				      GTK_RESPONSE_REJECT, NULL );
+    g_signal_connect( G_OBJECT( pw ), "response", G_CALLBACK( CancelSysex ),
+		      &ses );
+    ses.pwProgress = gtk_progress_bar_new();
+    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
+		       ses.pwProgress );
+    gtk_widget_show_all( pw );
     if( ( ses.pch = malloc( ses.cchAlloc = 1024 ) ) ) {
 	pva->pvSysex = &ses;
 	pva->sysex = HandleSysex;
-	idTimeout = gtk_timeout_add( 1000, SysexTimeout, &ses );
 
 	gtk_main();
 
-	gtk_timeout_remove( idTimeout );
 	pva->pvSysex = NULL;
 	pva->sysex = NULL;
     }
@@ -396,6 +630,11 @@ static int ControlChange( vamp *pva, char iController, char nValue ) {
     pva->control( pva, iController, nValue );
     
     return 0;
+}
+
+static int RequestAllControllers( vamp *pva ) {
+
+    return ControlChange( pva, CTRL_REQUEST, CTRL_REQUEST );
 }
 
 static int ProgramChange( vamp *pva, char iProgram ) {
@@ -434,9 +673,6 @@ static int IdentifyDevice( vamp *pva, GtkWindow *pw, char ach[ 256 ] ) {
 
     int cb;
     unsigned char *pch;
-    
-    if( ReadMIDI( pva ) )
-	return -1;
     
     if( StartSysEx( pva, CMD_IDENTIFY_DEV ) < 0 )
 	return -1;
@@ -544,8 +780,6 @@ static int RequestPreset( vamp *pva, GtkWindow *pw, char i,
     unsigned char *pch;
     int cb;
     
-    ReadMIDI( pva );
-    
     if( StartSysEx( pva, CMD_REQUEST_PRESET ) < 0 )
 	return -1;
     
@@ -567,7 +801,7 @@ static int RequestPreset( vamp *pva, GtkWindow *pw, char i,
 	return -1;
     }
 	
-    memcpy( ach, pch + 9, NUM_PARMS );
+    memcpy( ach, pch + 8, NUM_PARMS );
 
     free( pch );
 
@@ -578,8 +812,6 @@ static int RequestAllPresets( vamp *pva, GtkWindow *pw ) {
 
     unsigned char *pch;
     int cb;
-    
-    ReadMIDI( pva );
     
     if( StartSysEx( pva, CMD_REQUEST_ALL_PRESETS ) < 0 )
 	return -1;
@@ -599,24 +831,11 @@ static int RequestAllPresets( vamp *pva, GtkWindow *pw ) {
 	return -1;
     }
 	
-    memcpy( pva->achPreset, pch + 9, NUM_PRESETS * NUM_PARMS );
+    memcpy( pva->achPreset, pch + 8, NUM_PRESETS * NUM_PARMS );
 
     free( pch );
 
     return 0;
-}
-
-static char *PresetName( char *achPreset ) {
-
-    static char ach[ 17 ];
-    char *pch;
-    
-    memcpy( ach, &achPreset[ PARM_PRESET_NAME ], PARM_PRESET_LEN );
-    ach[ 16 ] = 0;
-    for( pch = ach + 15; *pch == ' '; pch-- )
-	*pch = 0;
-
-    return ach;
 }
 
 typedef struct _editorwindow {
@@ -833,7 +1052,7 @@ static void DriveChange( GtkWidget *pw, editorwindow *pew ) {
 static gchar *FormatValue( GtkWidget *pw, gdouble f, editorwindow *pew ) {
 
     int n;
-    char *pchPreset = pew->pva->achPreset[ (int) pew->pva->iProgram ];
+    char *pchPreset = pew->pva->achPreset[ PRESET_CURRENT ];
     static char *aszCompressorRatio[ 8 ] = { "1.2", "1.4", "2", "2.5",
 					     "3", "4.5", "6", "\xE2\x88\x9E" };
     static int anAutoWahSpeed[ 10 ] = { 10, 20, 50, 100, 200, 300, 400, 500,
@@ -897,7 +1116,7 @@ static void EditorSelect( GtkWidget *pw, gpointer *p ) {
 static void NameChange( GtkWidget *pw, editorwindow *pew ) {
 
     int i;
-    char *pch, *pchPreset = pew->pva->achPreset[ (int) pew->pva->iProgram ];
+    char *pch, *pchPreset = pew->pva->achPreset[ PRESET_CURRENT ];
 
     if( !pew->fRunning )
 	return;
@@ -937,8 +1156,17 @@ static void PopulateMenu( GtkWidget *pw, editorwindow *pew, char **ppch,
 
 static void CloseEditor( GtkWidget *pw, gint nResponse, vamp *pva ) {
 
-    if( nResponse == GTK_RESPONSE_ACCEPT ) {
-	/* FIXME write preset? */
+    char *pchPreset = pva->achPreset[ (int) pva->iProgram ];
+    
+    if( nResponse == GTK_RESPONSE_APPLY ) {
+	WritePreset( pva, pva->iProgram, pva->achPreset[ PRESET_CURRENT ] );
+    
+	RequestPreset( pva, GTK_WINDOW( pva->pwList ), pva->iProgram,
+		       pchPreset );
+    
+	gtk_label_set_text( GTK_LABEL( gtk_bin_get_child( GTK_BIN(
+	    pva->plw->apw[ (int) pva->iProgram ] ) ) ),
+			    PresetName( pchPreset ) );
     }
     
     gtk_widget_destroy( pw );
@@ -954,12 +1182,12 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     if( !( pva->pew = pew = malloc( sizeof( *pew ) ) ) )
 	return NULL;
 	
-    pwWindow = gtk_dialog_new_with_buttons( PresetName( achPreset ),
-					    GTK_WINDOW( pva->pwList ), 0,
-					    GTK_STOCK_OK, GTK_RESPONSE_ACCEPT,
+    pwWindow = gtk_dialog_new_with_buttons( PresetName( achPreset ), NULL, 0,
+					    GTK_STOCK_OK, GTK_RESPONSE_APPLY,
 					    GTK_STOCK_CLOSE,
 					    GTK_RESPONSE_REJECT, NULL );
-
+    gtk_dialog_set_default_response( GTK_DIALOG( pwWindow ),
+				     GTK_RESPONSE_APPLY );
     pew->pva = pva;
     pew->fRunning = FALSE;
     pva->pwEditor = pwWindow;
@@ -1175,6 +1403,61 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     return pwWindow;
 }
 
+static GtkWidget *CreateLogWindow( vamp *pva ) {
+    
+    GtkWidget *pwWindow, *pw, *pwScrolled;
+    char *pch;
+    
+    pwWindow = gtk_window_new( GTK_WINDOW_TOPLEVEL );
+    pva->pwLog = pwWindow;
+    g_object_add_weak_pointer( G_OBJECT( pwWindow ),
+			       (gpointer *) &pva->pwLog );
+    
+    pch = g_strdup_printf( "Free V-AMP - Log (%s)\n", pva->szDevice );
+    gtk_window_set_title( GTK_WINDOW( pwWindow ), pch );
+    g_free( pch );
+
+    gtk_window_set_default_size( GTK_WINDOW( pwWindow ), 400, 300 );
+    gtk_window_add_accel_group( GTK_WINDOW( pwWindow ), pva->pag );
+
+    pva->plsLog = gtk_list_store_new( 4, G_TYPE_STRING, G_TYPE_STRING,
+				      G_TYPE_STRING, G_TYPE_STRING );
+    g_object_add_weak_pointer( G_OBJECT( pva->plsLog ),
+			       (gpointer *) &pva->plsLog );
+			       
+    pwScrolled = gtk_scrolled_window_new( NULL, NULL );
+    gtk_scrolled_window_set_policy( GTK_SCROLLED_WINDOW( pwScrolled ),
+				    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC );
+    gtk_container_add( GTK_CONTAINER( pwWindow ), pwScrolled );
+    
+    pva->pwLogList = pw =
+	gtk_tree_view_new_with_model( GTK_TREE_MODEL( pva->plsLog ) );
+    g_object_unref( pva->plsLog );
+
+    gtk_tree_view_insert_column_with_attributes( GTK_TREE_VIEW( pw ),
+						 -1, "Device",
+						 gtk_cell_renderer_text_new(),
+						 "text", 0, NULL );
+    gtk_tree_view_insert_column_with_attributes( GTK_TREE_VIEW( pw ),
+						 -1, "Channel",
+						 gtk_cell_renderer_text_new(),
+						 "text", 1, NULL );
+    gtk_tree_view_insert_column_with_attributes( GTK_TREE_VIEW( pw ),
+						 -1, "Status",
+						 gtk_cell_renderer_text_new(),
+						 "text", 2, NULL );
+    gtk_tree_view_insert_column_with_attributes( GTK_TREE_VIEW( pw ),
+						 -1, "Description",
+						 gtk_cell_renderer_text_new(),
+						 "text", 3, NULL );
+    
+    gtk_container_add( GTK_CONTAINER( pwScrolled ), pw );
+    
+    gtk_widget_show_all( pwWindow );
+
+    return pwWindow;
+}
+
 static void UpdateListWindow( vamp *pva ) {
 
     int i;
@@ -1193,9 +1476,10 @@ static void ActivatePreset( GtkWidget *pw, vamp *pva ) {
 	return;
 
     iProgram = (char (*)[ NUM_PARMS ]) pch - pva->achPreset;
-
+    
     if( gtk_toggle_button_get_active( GTK_TOGGLE_BUTTON( pw ) ) ) {
 	/* open editor window */
+	memcpy( pva->achPreset[ PRESET_CURRENT ], pch, NUM_PARMS );
 	if( pva->pwEditor ) {
 	    gtk_window_present( GTK_WINDOW( pva->pwEditor ) );
 	    UpdateEditorWindow( pva->pwEditor, pch, pva );
@@ -1233,8 +1517,8 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 	return;
     }
 
-    pw = gtk_dialog_new_with_buttons( "About Free V-AMP", NULL /* FIXME */,
-				      0, GTK_STOCK_CLOSE, GTK_RESPONSE_ACCEPT,
+    pw = gtk_dialog_new_with_buttons( "About Free V-AMP", NULL, 0,
+				      GTK_STOCK_CLOSE, GTK_RESPONSE_ACCEPT,
 				      NULL );
 
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
@@ -1265,7 +1549,7 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 static void Copy( vamp *pva, guint n, GtkWidget *pwItem ) {
 
     pva->fClipboard = TRUE;
-    memcpy( pva->achClipboard, pva->achPreset[ (int) pva->iProgram ],
+    memcpy( pva->achClipboard, pva->achPreset[ PRESET_CURRENT ],
 	    sizeof( pva->achClipboard ) );
     gtk_widget_set_sensitive( pva->plw->pwPaste, TRUE );
 }
@@ -1326,7 +1610,7 @@ static void Open( vamp *pva, guint n, GtkWidget *pwItem ) {
 static void Paste( vamp *pva, guint n, GtkWidget *pwItem ) {
 
     char *achPreset = pva->achPreset[ (int) pva->iProgram ];
-    
+	    
     memcpy( achPreset, pva->achClipboard, sizeof( pva->achClipboard ) );
 
     WritePreset( pva, pva->iProgram, pva->achClipboard );
@@ -1339,6 +1623,93 @@ static void Paste( vamp *pva, guint n, GtkWidget *pwItem ) {
 	UpdateEditorWindow( pva->pwEditor, achPreset, pva );
 }
 
+static void LogToggled( GtkWidget *pw, GtkWidget *pwBox ) {
+
+    gtk_widget_set_sensitive( pwBox, gtk_toggle_button_get_active(
+	GTK_TOGGLE_BUTTON( pw ) ) );
+}
+
+static void Preferences( vamp *pva, guint n, GtkWidget *pwItem ) {
+
+    GtkWidget *pwWindow, *pwFrame, *pwLog, *pwLogMax, *pwLogScroll, *pwVbox,
+	*pwHbox;
+    char *pchRC;
+    FILE *pf;
+    
+    /* FIXME add other prefs (e.g. midi device, channel, ... ) */
+    
+    pwWindow = gtk_dialog_new_with_buttons( "Free V-AMP - Preferences",
+					    GTK_WINDOW( pva->pwList ),
+					    GTK_DIALOG_MODAL, GTK_STOCK_OK,
+					    GTK_RESPONSE_ACCEPT,
+					    GTK_STOCK_CANCEL,
+					    GTK_RESPONSE_REJECT, NULL);
+    gtk_dialog_set_default_response( GTK_DIALOG( pwWindow ),
+				     GTK_RESPONSE_ACCEPT );
+    pwFrame = gtk_frame_new( NULL );
+    gtk_container_set_border_width( GTK_CONTAINER( pwFrame ), 8 );
+    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pwWindow )->vbox ),
+		       pwFrame );
+    pwLog = gtk_check_button_new_with_label( "Log MIDI events" );
+    gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( pwLog ), pref.fLog );
+    gtk_frame_set_label_widget( GTK_FRAME( pwFrame ), pwLog );
+
+    pwVbox = gtk_vbox_new( FALSE, 0 );
+    gtk_container_set_border_width( GTK_CONTAINER( pwVbox ), 8 );
+    gtk_container_add( GTK_CONTAINER( pwFrame ), pwVbox );
+
+    pwHbox = gtk_hbox_new( FALSE, 0 );
+    gtk_container_add( GTK_CONTAINER( pwVbox ), pwHbox );
+
+    gtk_container_add( GTK_CONTAINER( pwHbox ),
+		       gtk_label_new( "Maximum log length:" ) );
+    
+    pwLogMax = gtk_spin_button_new_with_range( 10, 5000, 1 );
+    gtk_spin_button_set_value( GTK_SPIN_BUTTON( pwLogMax ), pref.cLogMax );
+    gtk_container_add( GTK_CONTAINER( pwHbox ), pwLogMax );
+    
+    pwLogScroll = gtk_check_button_new_with_label( "Scroll to show new "
+						   "events" );
+    gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( pwLogScroll ),
+				  pref.fLogScroll );
+    gtk_container_add( GTK_CONTAINER( pwVbox ), pwLogScroll );
+    
+    gtk_widget_show_all( pwWindow );
+    
+    g_signal_connect( pwLog, "toggled", G_CALLBACK( LogToggled ), pwVbox );
+    LogToggled( pwLog, pwVbox );
+    
+    if( gtk_dialog_run( GTK_DIALOG( pwWindow ) ) == GTK_RESPONSE_ACCEPT ) {
+	pref.fLog = gtk_toggle_button_get_active( GTK_TOGGLE_BUTTON( pwLog ) );
+	
+	if( pref.fLog && !pva->pwLog )
+	    CreateLogWindow( pva );
+	else if( !pref.fLog && pva->pwLog )
+	    gtk_widget_destroy( pva->pwLog );
+
+	pref.cLogMax = gtk_spin_button_get_value( GTK_SPIN_BUTTON(
+	    pwLogMax ) );
+	pref.fLogScroll = gtk_toggle_button_get_active( GTK_TOGGLE_BUTTON(
+	    pwLogScroll ) );
+	
+	LogTrimScroll( pva );
+
+	pchRC = g_build_filename( g_get_home_dir(), RCFILE, NULL );
+	pf = fopen( pchRC, "w" );
+	g_free( pchRC );
+	fprintf( pf,
+		 "log %c\n"
+		 "log-max %d\n"
+		 "log-scroll %c\n",
+		 pref.fLog ? 'y' : 'n',
+		 pref.cLogMax,
+		 pref.fLogScroll ? 'y' : 'n' );
+	fclose( pf );
+    }
+
+    gtk_widget_destroy( pwWindow );
+}
+
 static void Refresh( vamp *pva, guint n, GtkWidget *pwItem ) {
     
     RequestAllPresets( pva, GTK_WINDOW( pva->pwList ) );
@@ -1346,10 +1717,7 @@ static void Refresh( vamp *pva, guint n, GtkWidget *pwItem ) {
     UpdateListWindow( pva );
 	    
     if( pva->pwEditor )
-	/* FIXME we should request all controllers for this instead */
-	UpdateEditorWindow( pva->pwEditor,
-			    pva->achPreset[ (int) pva->iProgram ],
-			    pva );
+	RequestAllControllers( pva );
 }
 
 static void Save( vamp *pva, guint n, GtkWidget *pwItem ) {
@@ -1385,7 +1753,7 @@ static void Save( vamp *pva, guint n, GtkWidget *pwItem ) {
 	    break;
 	}
 	
-	if( write( h, pva->achPreset, sizeof( pva->achPreset ) ) < 0 )
+	if( write( h, pva->achPreset, NUM_PRESETS * NUM_PARMS ) < 0 )
 	    perror( pch );
 
 	close( h );
@@ -1419,6 +1787,9 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
 	  GTK_STOCK_COPY },
 	{ "/_Edit/_Paste", "<control>V", Paste, 0, "<StockItem>",
 	  GTK_STOCK_PASTE },
+	{ "/_Edit/-", NULL, NULL, 0, "<Separator>" },
+	{ "/_Edit/P_references", NULL, Preferences, 0, "<StockItem>",
+	  GTK_STOCK_PREFERENCES },
 	{ "/_Help", NULL, NULL, 0, "<Branch>" },
 	{ "/_Help/About Free V-AMP", NULL, About, 0, "<StockItem>",
 	  szIcon }
@@ -1444,6 +1815,7 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
     gtk_item_factory_create_items( pif, sizeof( aife ) / sizeof( aife[ 0 ] ),
 				   aife, pva );
     gtk_window_add_accel_group( GTK_WINDOW( pwWindow ), pva->pag );
+    g_object_unref( pva->pag );
     gtk_box_pack_start( GTK_BOX( pwVbox ),
 			pwMenu = gtk_item_factory_get_widget( pif, "<main>" ),
 			FALSE, FALSE, 0 );
@@ -1487,18 +1859,46 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
     }
 	    
     gtk_widget_show_all( pwWindow );
+
+    if( pref.fLog )
+	CreateLogWindow( pva );
     
     return pwWindow;
+}
+
+static void LoadPreferences( void ) {
+
+    char *pchRC, *pchData, *pch, ch;
+    char szKeyword[ 32 ];
+    
+    pchRC = g_build_filename( g_get_home_dir(), RCFILE, NULL );
+    g_file_get_contents( pchRC, &pchData, NULL, NULL );
+    g_free( pchRC );
+    
+    for( pch = pchData; pch; ) {
+	sscanf( pch, "%31s", szKeyword );
+
+	if( !strcmp( szKeyword, "log" ) && sscanf( pch, "log %c", &ch ) == 1 )
+	    pref.fLog = toupper( ch ) == 'Y';
+	else if( !strcmp( szKeyword, "log-max" ) &&
+		 sscanf( pch, "log-max %d", &pref.cLogMax ) == 1 )
+	    ;
+	else if( !strcmp( szKeyword, "log-scroll" ) &&
+		 sscanf( pch, "log-scroll %c", &ch ) == 1 )
+	    pref.fLogScroll = toupper( ch ) == 'Y';
+
+	if( ( pch = strchr( pch, '\n' ) ) )
+	    pch++;
+    }
+
+    g_free( pchData );
 }
 
 static void HandleControlChange( vamp *pva, char iController, char nValue ) {
 
     char *pchPreset;
     
-    if( pva->iProgram == PRESET_CURRENT )
-	return;
-
-    pchPreset = pva->achPreset[ (int) pva->iProgram ];
+    pchPreset = pva->achPreset[ PRESET_CURRENT ];
 
     if( ( iController < CTRL_AMP_GAIN ) ||
 	( iController > CTRL_AMP_TYPE ) ||
@@ -1507,8 +1907,7 @@ static void HandleControlChange( vamp *pva, char iController, char nValue ) {
 	return;
     else if( ( iController == CTRL_AMP_TYPE_DEFAULT ) ||
 	     ( iController == CTRL_FX_TYPE_DEFAULT ) )
-	RequestPreset( pva, GTK_WINDOW( pva->pwEditor ), PRESET_CURRENT,
-		       pchPreset );
+	RequestAllControllers( pva );
     else if( iController == CTRL_FX_ASSIGN )
 	pchPreset[ PARM_FX_MIX_ASSIGN ] = nValue;
     else if( iController == CTRL_AMP_TYPE )
@@ -1544,6 +1943,14 @@ extern int main( int argc, char *argv[] ) {
     int i;
     vamp va;
     int ch;
+    static struct option ao[] = {
+	{ "channel", required_argument, NULL, 'c' },
+	{ "device", required_argument, NULL, 'd' },
+        { "help", no_argument, NULL, 'h' },
+        { "no-midi", no_argument, NULL, 'n' },
+        { "version", no_argument, NULL, 'v' },
+        { NULL, 0, NULL, 0 }
+    };
     
     gtk_init( &argc, &argv );
 
@@ -1563,15 +1970,17 @@ extern int main( int argc, char *argv[] ) {
     va.control = HandleControlChange;
     va.program = HandleProgramChange;
     va.sysex = NULL;
-    va.pwEditor = va.pwList = NULL;
+    va.pwEditor = va.pwList = va.pwLog = NULL;
+    va.plsLog = NULL;
     va.fClipboard = FALSE;
+
+    LoadPreferences();
     
-    while( ( ch = getopt( argc, argv, "c:d:hnv" ) ) >= 0 )
+    while( ( ch = getopt_long( argc, argv, "c:d:hnv", ao, NULL ) ) >= 0 )
 	switch( ch ) {
 	case 'c':
 	    /* select MIDI channel */
-	    if( ( va.iChannel = atoi( optarg ) - 1 ) < 0 ||
-		va.iChannel > 0x0F ) {
+	    if( ( va.iChannel = atoi( optarg ) - 1 ) > 0x0F ) {
 		fprintf( stderr, "%s: channel \"%s\" invalid\n",
 			 argv[ 0 ], optarg );
 		va.iChannel = 0;
@@ -1585,7 +1994,15 @@ extern int main( int argc, char *argv[] ) {
 
 	case 'h':
 	    /* help */
-	    /* FIXME */
+	    printf( "Usage: %s [option ...]\n"
+		    "Options:\n"
+		    "  -c C, --channel=C  Use MIDI channel C\n"
+		    "  -d D, --device=D   Use MIDI device D\n"
+		    "  -h, --help         Display usage and exit\n"
+		    "  -n, --no-midi      Do not use external V-AMP\n"
+		    "  -v, --version      Show version information and exit\n"
+		    "\n"
+		    "Please report bugs to <gtw@gnu.org>.\n", argv[ 0 ] );
 	    return EXIT_SUCCESS;
 	    
 	case 'n':
@@ -1627,14 +2044,14 @@ extern int main( int argc, char *argv[] ) {
 
     g_signal_connect( pw, "destroy", G_CALLBACK( gtk_main_quit ),
 		      NULL );
+
+    /* FIXME handle files given on command line */
     
     gtk_main();
     
     return EXIT_SUCCESS;
 }
 
-/**************** FIXME FIXME FIXME the list window should always show the
-  status of the (written) presets; the editor window should always show the
-  status of the edit buffer!!!  To refresh the edit window, we should request
-  all controllers; to refresh the list window, we should use a sysex preset
-  request. */
+/* FIXME implement error handling throughout! */
+/* FIXME import/export patches (.vlb and sysex) */
+/* FIXME add printing */

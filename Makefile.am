@@ -4,4 +4,4 @@ bin_PROGRAMS = freevamp
 
 INCLUDES = @GTK_CFLAGS@
 freevamp_LDADD = @GTK_LIBS@
-freevamp_SOURCES = freevamp.c fvicon.h
+freevamp_SOURCES = freevamp.c fvicon.h getopt.c getopt.h getopt1.c
