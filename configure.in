@@ -8,6 +8,7 @@ then
 fi
 
 dnl Checks for programs.
+AC_PROG_AWK
 AC_PROG_CC
 
 dnl Checks for libraries.

@@ -40,6 +40,8 @@
 #include "fvicon.h"
 #include "getopt.h"
 
+extern char szCopying[], szWarranty[];
+
 #define RCFILE ".freevamprc"
 
 #define CTRL_WAH_PEDAL 1
@@ -1668,9 +1670,68 @@ static int ReadPresetsFile( vamp *pva, GtkWindow *pw, const char *pch ) {
 
 static void Refresh( vamp *pva, guint n, GtkWidget *pwItem );
 
+typedef enum _aboutresponse {
+    RESPONSE_COPYING = 1, RESPONSE_WARRANTY
+} aboutresponse;
+
+static void AboutConditions( char *szTitle, char *sz ) {
+
+    GtkWidget *pw, *pwText, *pwScrolled;
+    GtkTextBuffer *ptb;
+    GtkTextIter i;
+    PangoFontDescription *pfd;
+    
+    pw = gtk_dialog_new_with_buttons( szTitle, NULL, 0, GTK_STOCK_CLOSE,
+				      GTK_RESPONSE_ACCEPT, NULL );
+    gtk_dialog_set_default_response( GTK_DIALOG( pw ), GTK_RESPONSE_ACCEPT );
+    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
+		       pwScrolled = gtk_scrolled_window_new( NULL, NULL ) );
+    gtk_scrolled_window_set_policy( GTK_SCROLLED_WINDOW( pwScrolled ),
+				    GTK_POLICY_NEVER, GTK_POLICY_ALWAYS );
+    gtk_scrolled_window_set_shadow_type( GTK_SCROLLED_WINDOW( pwScrolled ),
+					 GTK_SHADOW_IN );
+    gtk_container_add( GTK_CONTAINER( pwScrolled ),
+		       pwText = gtk_text_view_new() );
+    ptb = gtk_text_view_get_buffer( GTK_TEXT_VIEW( pwText ) );
+    gtk_text_view_set_editable( GTK_TEXT_VIEW( pwText ), FALSE );
+    gtk_text_view_set_cursor_visible( GTK_TEXT_VIEW( pwText ), FALSE );
+    pfd = pango_font_description_new();
+    pango_font_description_set_family_static( pfd, "fixed" );
+    gtk_widget_modify_font( pwText, pfd );
+    pango_font_description_free( pfd );
+
+    gtk_window_set_default_size( GTK_WINDOW( pw ), -1, 400 );
+
+    gtk_widget_show_all( pw );
+    
+    gtk_text_buffer_get_start_iter( ptb, &i );
+    gtk_text_buffer_insert( ptb, &i, sz, -1 );
+
+    gtk_dialog_run( GTK_DIALOG( pw ) );
+    gtk_widget_destroy( pw );
+}
+
+static void AboutResponse( GtkWidget *pw, aboutresponse ar ) {
+
+    switch( ar ) {
+    case RESPONSE_COPYING:
+	AboutConditions( "Free V-AMP - Copying conditions", szCopying );
+	break;
+
+    case RESPONSE_WARRANTY:
+	AboutConditions( "Free V-AMP - Warranty", szWarranty );
+	break;
+	
+    default:
+	gtk_widget_destroy( pw );
+    }
+}
+
 static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 
     static GtkWidget *pw, *pwHbox, *pwLabel;
+    PangoAttrList *pal;
+    PangoAttribute *pa;
 
     if( pw ) {
 	gtk_window_present( GTK_WINDOW( pw ) );
@@ -1678,6 +1739,8 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
     }
 
     pw = gtk_dialog_new_with_buttons( "About Free V-AMP", NULL, 0,
+				      "Copying conditions", RESPONSE_COPYING,
+				      "Warranty", RESPONSE_WARRANTY,
 				      GTK_STOCK_CLOSE, GTK_RESPONSE_ACCEPT,
 				      NULL );
 
@@ -1687,20 +1750,52 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 			gtk_image_new_from_stock( szIcon,
 						  GTK_ICON_SIZE_DIALOG ),
 			FALSE, FALSE, 0 );
-    pwLabel = gtk_label_new( NULL );
-    gtk_label_set_markup( GTK_LABEL( pwLabel ),
-			  "<span font_desc=\"serif bold 48\">Free "
-			  "V-AMP</span>" );
+    pwLabel = gtk_label_new( "Free V-AMP" );
+    pal = pango_attr_list_new();
+    pa = pango_attr_size_new( 48 * PANGO_SCALE );
+    pa->start_index = 0;
+    pa->end_index = G_MAXINT;
+    pango_attr_list_insert( pal, pa );
+    pa = pango_attr_weight_new( PANGO_WEIGHT_BOLD );
+    pa->start_index = 0;
+    pa->end_index = G_MAXINT;
+    pango_attr_list_insert( pal, pa );
+    pa = pango_attr_family_new( "serif" );
+    pa->start_index = 0;
+    pa->end_index = G_MAXINT;
+    pango_attr_list_insert( pal, pa );
+    gtk_label_set_attributes( GTK_LABEL( pwLabel ), pal );
+    pango_attr_list_unref( pal );
     gtk_container_add( GTK_CONTAINER( pwHbox ), pwLabel );
 
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
 		       gtk_label_new( "version " VERSION ) );
     
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
-		       gtk_label_new( "by Gary Wong, 2002" ) );
+		       gtk_label_new( "\xC2\xA9 Copyright Gary Wong, 2002" ) );
+
+    pwLabel = gtk_label_new( "Free V-AMP is free software, covered "
+			     "by the GNU General Public License "
+			     "version 2, and you are welcome to "
+			     "change it and/or distribute copies of "
+			     "it under certain conditions.  There is "
+			     "absolutely no warranty for Free "
+			     "V-AMP." );
+    pal = pango_attr_list_new();
+    pa = pango_attr_scale_new( PANGO_SCALE_SMALL );
+    pa->start_index = 0;
+    pa->end_index = G_MAXINT;
+    pango_attr_list_insert( pal, pa );
+    gtk_label_set_attributes( GTK_LABEL( pwLabel ), pal );
+    pango_attr_list_unref( pal );
+    gtk_label_set_line_wrap( GTK_LABEL( pwLabel ), TRUE );
+    gtk_label_set_justify( GTK_LABEL( pwLabel ), GTK_JUSTIFY_CENTER );
+    gtk_box_pack_end( GTK_BOX( GTK_DIALOG( pw )->vbox ), pwLabel,
+		      TRUE, TRUE, 8 );
     
-    g_signal_connect_swapped( pw, "response", G_CALLBACK( gtk_widget_destroy ),
-			      pw );
+    gtk_dialog_set_default_response( GTK_DIALOG( pw ), GTK_RESPONSE_ACCEPT );
+    g_signal_connect( pw, "response", G_CALLBACK( AboutResponse ), NULL );
+
     g_object_add_weak_pointer( G_OBJECT( pw ), (gpointer *) &pw );
     
     gtk_widget_show_all( pw );
