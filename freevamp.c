@@ -100,7 +100,6 @@ extern char szCopying[], szWarranty[];
 #define PARM_AMP_MID 2
 #define PARM_AMP_BASS 3
 #define PARM_AMP_VOL 4
-#define PARM_AMP_
 #define PARM_AMP_PRESENCE_V2 5
 #define PARM_REVERB_MIX 6
 #define PARM_AMP_TYPE 7
@@ -1749,11 +1748,10 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     pew->pwDrive = pw;
 
     for( i = 0; i < 6; i++ ) {
+	pw = gtk_vscale_new_with_range( 0, 127, 1 );
 	if( VAmp2( pva ) || i != 4 )
-	    gtk_table_attach_defaults( GTK_TABLE( pwTable ),
-				       pw = gtk_vscale_new_with_range( 0, 127,
-								       1 ),
-				       i + 1, i + 2, 1, 2 );
+	    gtk_table_attach_defaults( GTK_TABLE( pwTable ), pw, i + 1, i + 2,
+				       1, 2 );
 	g_signal_connect( pw, "value-changed", G_CALLBACK( EditorChange ),
 			  pew );
 	g_signal_connect( pw, "format-value", G_CALLBACK( FormatValue ), pew );
@@ -3152,3 +3150,4 @@ extern int main( int argc, char *argv[] ) {
 /* FIXME when changing between auto wah/compressor, first param doesn't update
    until mouse moves over it (dependent on GTK+ version?) */
 /* FIXME allow printing only a subset of pages */
+/* FIXME allow selecting/copying from MIDI log */

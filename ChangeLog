@@ -1,3 +1,9 @@
+Wed Jan 22 09:52:48 2003  Gary Wong  <gtw@gnu.org>
+
+	* freevamp.c (CreateEditorWindow): Create all amp widgets, even
+	on a V-AMP 1 (otherwise the treble control failed).  Reported by
+	Luca De Rugeriis.  Version 0.9.2 pre-released.
+
 Mon Jan 20 13:37:46 2003  Gary Wong  <gtw@gnu.org>
 
 	* freevamp.c: Various patches to support the V-AMP 1.  Version
