@@ -1,5 +1,5 @@
 AC_INIT(freevamp.c)
-AM_INIT_AUTOMAKE(freevamp,0.9)
+AM_INIT_AUTOMAKE(freevamp,0.9.1)
 AM_CONFIG_HEADER(config.h)
 
 if test -f config.options

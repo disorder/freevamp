@@ -1,7 +1,7 @@
 /*
  * freevamp.c
  *
- * by Gary Wong <gtw@gnu.org>, 2002.
+ * by Gary Wong <gtw@gnu.org>, 2002, 2003.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -52,9 +52,13 @@ extern char szCopying[], szWarranty[];
 #define CTRL_AMP_MID 14
 #define CTRL_AMP_BASS 15
 #define CTRL_AMP_VOL 16
-#define CTRL_AMP_PRESENCE 17
+#define CTRL_FX_ASSIGN_AMP_PRESENCE 17
+#define CTRL_FX_ASSIGN_V1 17
+#define CTRL_AMP_PRESENCE_V2 17
 #define CTRL_REVERB_MIX 18
-#define CTRL_AMP_TYPE_DEFAULT 19
+#define CTRL_AMP_TYPE_AMP_TYPE_DEFAULT 19
+#define CTRL_AMP_TYPE_V1 19
+#define CTRL_AMP_TYPE_DEFAULT_V2 19
 #define CTRL_FX_TYPE_DEFAULT 20
 #define CTRL_FX 21
 #define CTRL_REVERB 22
@@ -79,24 +83,25 @@ extern char szCopying[], szWarranty[];
 #define CTRL_POST_FX_2 57
 #define CTRL_POST_FX_3 58
 #define CTRL_POST_FX_MIX 59
-#define CTRL_FX_ASSIGN 60
-#define CTRL_AMP_TYPE 61
+#define CTRL_FX_ASSIGN_V2 60
+#define CTRL_AMP_TYPE_V2 61
 #define CTRL_TAP 64
 #define CTRL_REQUEST 80
 #define CTRL_NAME 81
-#define CTRL_TUNER_VOLUME 82
-#define CTRL_TUNER_FREQ 83
-#define CTRL_CONFIG 84
-#define CTRL_LIVE_EQ_TREBLE 85
-#define CTRL_LIVE_EQ_MID 86
-#define CTRL_LIVE_EQ_BASS 87
+#define CTRL_TUNER_VOLUME_V2 82
+#define CTRL_TUNER_FREQ_V2 83
+#define CTRL_CONFIG_V2 84
+#define CTRL_LIVE_EQ_TREBLE_V2 85
+#define CTRL_LIVE_EQ_MID_V2 86
+#define CTRL_LIVE_EQ_BASS_V2 87
 
 #define PARM_AMP_GAIN 0
 #define PARM_AMP_TREBLE 1
 #define PARM_AMP_MID 2
 #define PARM_AMP_BASS 3
 #define PARM_AMP_VOL 4
-#define PARM_AMP_PRESENCE 5
+#define PARM_AMP_
+#define PARM_AMP_PRESENCE_V2 5
 #define PARM_REVERB_MIX 6
 #define PARM_AMP_TYPE 7
 #define PARM_FX_MIX_ASSIGN 8
@@ -191,6 +196,8 @@ extern char szCopying[], szWarranty[];
 #define ID_BEHRINGER1 0x00
 #define ID_BEHRINGER2 0x20
 #define ID_BEHRINGER3 0x32
+#define ID_MODEL_V_AMP_1 0x0D
+#define ID_MODEL_V_AMP_2 0x10
 
 #define DEV_BROADCAST 0x7F
 #define MOD_BROADCAST 0x7F
@@ -247,22 +254,30 @@ static char *aszReverbName[] = { "Tiny room", "Small room", "Medium room",
 				 "Large room", "Ultra room", "Small spring",
 				 "Medium spring", "Short ambience",
 				 "Long ambience", NULL };
-static char *aszAmpName[] = { "None", "American Blues", "And Deluxe",
-			      "Modern Class A", "Custom Class A",
-			      "Tweed Combo", "Small Combo",
-			      "Classic Clean", "Black Twin",
-			      "British Blues", "And Custom",
-			      "British Class A", "Non Top Boost",
-			      "British Classic", "Classic 50W",
-			      "British Hi Gain", "British Class A 15W",
-			      "Rectified Hi Gain", "Rectified Head",
-			      "Modern Hi Gain", "Savage Beast",
-			      "Fuzz Box", "Custom Hi Gain",
-			      "Ultimate V-AMP", "Ultimate Plus",
-			      "Drive V-AMP", "California Drive",
-			      "Crunch V-AMP", "Custom Drive",
-			      "Clean V-AMP", "California Clean",
-			      "Tube Pre-amp", "Custom Clean", NULL };
+static char *aszAmpNameV1[] = { "American Blues", "Modern Class A",
+				"Tweed Combo", "Classic Clean",
+				"British Blues", "British Class A",
+				"British Classic", "British Hi Gain",
+				"Rectified Hi Gain", "Modern Hi Gain",
+				"Fuzz Box", "Ultimate V-AMP",
+				"Drive V-AMP", "Crunch V-AMP",
+				"Clean V-AMP", "Tube Pre-amp", NULL },
+    *aszAmpNameV2[] = { "None", "American Blues", "And Deluxe",
+			"Modern Class A", "Custom Class A",
+			"Tweed Combo", "Small Combo",
+			"Classic Clean", "Black Twin",
+			"British Blues", "And Custom",
+			"British Class A", "Non Top Boost",
+			"British Classic", "Classic 50W",
+			"British Hi Gain", "British Class A 15W",
+			"Rectified Hi Gain", "Rectified Head",
+			"Modern Hi Gain", "Savage Beast",
+			"Fuzz Box", "Custom Hi Gain",
+			"Ultimate V-AMP", "Ultimate Plus",
+			"Drive V-AMP", "California Drive",
+			"Crunch V-AMP", "Custom Drive",
+			"Clean V-AMP", "California Clean",
+			"Tube Pre-amp", "Custom Clean", NULL };
 static char *aszCabinetName[] = { "None", "1 x 8\" Vintage Tweed",
 				  "4 x 10\" Vintage Bass",
 				  "4 x 10\" V-AMP Custom",
@@ -300,6 +315,11 @@ static char achDefaultParm[ NUM_PARMS ] = {
 static preferences pref = { FALSE, TRUE, 100, PAPER_ISO_A4_X, PAPER_ISO_A4_Y,
 			    NULL };
 
+static int VAmp2( vamp *pva ) {
+
+    return pva->nModelID >= ID_MODEL_V_AMP_2;
+}
+
 static char *PreEffectsName( int i ) {
 
     return ( i < 0 || i > 2 ) ? NULL : aszPreEffectsName[ i ];
@@ -320,14 +340,21 @@ static char *ReverbName( int i ) {
     return ( i < 0 || i > 8 ) ? NULL : aszReverbName[ i ];
 }
 
-static char *AmpName( int i ) {
+static char *AmpName( vamp *pva, int i ) {
 
-    if( i < 0x10 )
-	return aszAmpName[ ( i << 1 ) + 1 ];
-    else if( i < 0x20 )
-	return aszAmpName[ ( ( i & 0x0F ) << 1 ) + 2 ];
-    else
-	return aszAmpName[ 0 ];
+    if( VAmp2( pva ) ) {
+	if( i < 0x10 )
+	    return aszAmpNameV2[ ( i << 1 ) + 1 ];
+	else if( i < 0x20 )
+	    return aszAmpNameV2[ ( ( i & 0x0F ) << 1 ) + 2 ];
+	else
+	    return aszAmpNameV2[ 0 ];
+    } else {
+	if( i >= 0 && i < 0x10 )
+	    return aszAmpNameV1[ i ];
+	else
+	    return "n/a";
+    }
 }
 
 static char *CabinetName( int i ) {
@@ -423,7 +450,7 @@ static void Log( vamp *pva, unsigned char chStatus, char *szFormat, ... ) {
     LogTrimScroll( pva );
 }
 
-static char *ControllerName( unsigned char i ) {
+static char *ControllerName( vamp *pva, unsigned char i ) {
 
     switch( i ) {
     case CTRL_WAH_PEDAL:
@@ -440,12 +467,12 @@ static char *ControllerName( unsigned char i ) {
 	return "Amp Bass";
     case CTRL_AMP_VOL:
 	return "Amp Vol";
-    case CTRL_AMP_PRESENCE:
-	return "Presence";
+    case CTRL_FX_ASSIGN_AMP_PRESENCE:
+	return VAmp2( pva ) ? "Presence" : "Assign Effects";
     case CTRL_REVERB_MIX:
 	return "Reverb Mix";
-    case CTRL_AMP_TYPE_DEFAULT:
-	return "Amp Type with default cabinet";
+    case CTRL_AMP_TYPE_AMP_TYPE_DEFAULT:
+	return VAmp2( pva ) ? "Amp Type with default cabinet" : "Amp Type";
     case CTRL_FX_TYPE_DEFAULT:
 	return "Fx Type with defaults";
     case CTRL_FX:
@@ -494,9 +521,9 @@ static char *ControllerName( unsigned char i ) {
 	return "post Fx 3";
     case CTRL_POST_FX_MIX:
 	return "post Fx Mix";
-    case CTRL_FX_ASSIGN:
+    case CTRL_FX_ASSIGN_V2:
 	return "Assign Effects";
-    case CTRL_AMP_TYPE:
+    case CTRL_AMP_TYPE_V2:
 	return "Amp Type w/o cabinet change";
     case CTRL_TAP:
 	return "Tap";
@@ -504,17 +531,17 @@ static char *ControllerName( unsigned char i ) {
 	return "Request Controls";
     case CTRL_NAME:
 	return "Preset Name";
-    case CTRL_TUNER_VOLUME:
+    case CTRL_TUNER_VOLUME_V2:
 	return "Tuner Bypass Volume";
-    case CTRL_TUNER_FREQ:
+    case CTRL_TUNER_FREQ_V2:
 	return "Tuner Centre Frequency";
-    case CTRL_CONFIG:
+    case CTRL_CONFIG_V2:
 	return "Configuration";
-    case CTRL_LIVE_EQ_TREBLE:
+    case CTRL_LIVE_EQ_TREBLE_V2:
 	return "Live EQ Treble";
-    case CTRL_LIVE_EQ_MID:
+    case CTRL_LIVE_EQ_MID_V2:
 	return "Live EQ Mid";
-    case CTRL_LIVE_EQ_BASS:
+    case CTRL_LIVE_EQ_BASS_V2:
 	return "Live EQ Bass";
     default:
 	return "unknown";
@@ -631,18 +658,18 @@ static int ReadMIDI( vamp *pva ) {
 			    Log( pva, pva->nRunningStatus,
 				 "Controller %d (%s): position %d",
 				 pva->achCommand[ 0 ],
-				 ControllerName( pva->achCommand[ 0 ] ),
+				 ControllerName( pva, pva->achCommand[ 0 ] ),
 				 pva->achCommand[ 1 ] );
 			else
 			    Log( pva, pva->nRunningStatus,
 				 "Controller %d (%s): character '%c'",
 				 pva->achCommand[ 0 ],
-				 ControllerName( pva->achCommand[ 0 ] ),
+				 ControllerName( pva, pva->achCommand[ 0 ] ),
 				 pva->achCommand[ 1 ] );
 		    } else
 			Log( pva, pva->nRunningStatus,
 			     "Controller %d (%s): %d", pva->achCommand[ 0 ],
-			     ControllerName( pva->achCommand[ 0 ] ),
+			     ControllerName( pva, pva->achCommand[ 0 ] ),
 			     pva->achCommand[ 1 ] );
 		    pva->control( pva, pva->achCommand[ 0 ],
 				  pva->achCommand[ 1 ] );
@@ -712,6 +739,7 @@ static int ReadMIDI( vamp *pva ) {
 		
 	    default:
 		/* ignore */
+		;
 	    }
 	}
     }
@@ -876,7 +904,7 @@ static int IdentifyDevice( vamp *pva, GtkWindow *pw, char ach[ 256 ] ) {
     if( !( pch = ReadSysex( pva, pw, &cb, 0 ) ) )
 	return -1;
 
-    if( pch[ 0 ] != ID_BEHRINGER1 || pch[ 1 ] != ID_BEHRINGER2 ||
+    if( cb < 6 || pch[ 0 ] != ID_BEHRINGER1 || pch[ 1 ] != ID_BEHRINGER2 ||
 	pch[ 2 ] != ID_BEHRINGER3 || pch[ 5 ] != CMD_IDENTIFY_RESPONSE ) {
 	free( pch );
 	return -1;
@@ -1061,7 +1089,7 @@ static void UpdateEditorWindow( GtkWidget *pw, char achPreset[ NUM_PARMS ],
     int i;
     static int aiAmpParm[ 6 ] = {
 	PARM_AMP_GAIN, PARM_AMP_BASS, PARM_AMP_MID,
-	PARM_AMP_TREBLE, PARM_AMP_PRESENCE, PARM_AMP_VOL
+	PARM_AMP_TREBLE, PARM_AMP_PRESENCE_V2, PARM_AMP_VOL
     };
 
     pva->pew->fRunning = FALSE;
@@ -1145,17 +1173,26 @@ static void UpdateEditorWindow( GtkWidget *pw, char achPreset[ NUM_PARMS ],
 			 achPreset[ PARM_REVERB_MIX ] );
     
     /* Amp */
-    if( achPreset[ PARM_AMP_TYPE ] < 0x10 )
+    if( !VAmp2( pva ) )
 	gtk_option_menu_set_history( GTK_OPTION_MENU( pva->pew->pwAmpType ),
-				     ( achPreset[ PARM_AMP_TYPE ] << 1 ) + 1 );
-    else if( achPreset[ PARM_AMP_TYPE ] < 0x20 )
-	gtk_option_menu_set_history( GTK_OPTION_MENU( pva->pew->pwAmpType ),
-				     ( ( achPreset[ PARM_AMP_TYPE ] & 0x0F )
-				       << 1 ) + 2 );
-    else
-	gtk_option_menu_set_history( GTK_OPTION_MENU( pva->pew->pwAmpType ),
-				     0 );
-	
+				     achPreset[ PARM_AMP_TYPE ] & 0x0F );
+    else {
+	if( achPreset[ PARM_AMP_TYPE ] < 0x10 )
+	    gtk_option_menu_set_history( GTK_OPTION_MENU(
+					     pva->pew->pwAmpType ),
+					 ( achPreset[ PARM_AMP_TYPE ] << 1 ) +
+					 1 );
+	else if( achPreset[ PARM_AMP_TYPE ] < 0x20 )
+	    gtk_option_menu_set_history( GTK_OPTION_MENU(
+					     pva->pew->pwAmpType ),
+					 ( ( achPreset[ PARM_AMP_TYPE ] &
+					     0x0F ) << 1 ) + 2 );
+	else
+	    gtk_option_menu_set_history( GTK_OPTION_MENU(
+					     pva->pew->pwAmpType ),
+					 0 );
+    }
+    
     gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( pva->pew->pwDrive ),
 				  achPreset[ PARM_DRIVE ] );
     for( i = 0; i < 6; i++ )
@@ -1235,7 +1272,7 @@ static void EditorChange( GtkWidget *pw, editorwindow *pew ) {
     else if( pw == pew->apwAmp[ 3 ] )
 	iController = CTRL_AMP_TREBLE;
     else if( pw == pew->apwAmp[ 4 ] )
-	iController = CTRL_AMP_PRESENCE;
+	iController = CTRL_AMP_PRESENCE_V2;
     else if( pw == pew->apwAmp[ 5 ] )
 	iController = CTRL_AMP_VOL;
 
@@ -1298,7 +1335,7 @@ static void EditorSelect( GtkWidget *pw, gpointer *p ) {
     if( !pva->pew->fRunning )
 	return;
     
-    if( iController == CTRL_AMP_TYPE ) {
+    if( VAmp2( pva ) && iController == CTRL_AMP_TYPE_V2 ) {
 	if( !i )
 	    i = 0x20;
 	else if( i & 1 )
@@ -1699,7 +1736,10 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
 
     gtk_table_attach( GTK_TABLE( pwTable ), pw = gtk_option_menu_new(),
 		      0, 7, 0, 1, 0, 0, 0, 0 );
-    PopulateMenu( pw, pew, aszAmpName, CTRL_AMP_TYPE );
+    if( !VAmp2( pva ) )
+	PopulateMenu( pw, pew, aszAmpNameV1, CTRL_AMP_TYPE_V1 );
+    else
+	PopulateMenu( pw, pew, aszAmpNameV2, CTRL_AMP_TYPE_V2 );
     pew->pwAmpType = pw;
 
     gtk_table_attach( GTK_TABLE( pwTable ),
@@ -1709,18 +1749,21 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     pew->pwDrive = pw;
 
     for( i = 0; i < 6; i++ ) {
-	gtk_table_attach_defaults( GTK_TABLE( pwTable ),
-				   pw = gtk_vscale_new_with_range( 0, 127, 1 ),
-				   i + 1, i + 2, 1, 2 );
+	if( VAmp2( pva ) || i != 4 )
+	    gtk_table_attach_defaults( GTK_TABLE( pwTable ),
+				       pw = gtk_vscale_new_with_range( 0, 127,
+								       1 ),
+				       i + 1, i + 2, 1, 2 );
 	g_signal_connect( pw, "value-changed", G_CALLBACK( EditorChange ),
 			  pew );
 	g_signal_connect( pw, "format-value", G_CALLBACK( FormatValue ), pew );
 	gtk_widget_set_size_request( pw, -1, 80 );
 	gtk_range_set_inverted( GTK_RANGE( pw ), TRUE );
 	pew->apwAmp[ i ] = pw;
-	gtk_table_attach( GTK_TABLE( pwTable ),
-			  gtk_label_new( aszAmpLabel[ i ] ),
-			  i + 1, i + 2, 2, 3, 0, 0, 0, 0 );
+	if( VAmp2( pva ) || i != 4 )
+	    gtk_table_attach( GTK_TABLE( pwTable ),
+			      gtk_label_new( aszAmpLabel[ i ] ),
+			      i + 1, i + 2, 2, 3, 0, 0, 0, 0 );
     }
 
     pwVbox = gtk_vbox_new( FALSE, 0 );
@@ -1741,7 +1784,8 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     gtk_container_add( GTK_CONTAINER( pwFrame ),
 		       pwAlign = gtk_alignment_new( 0.5, 0, 0, 0 ) );
     gtk_container_add( GTK_CONTAINER( pwAlign ), pw = gtk_option_menu_new() );
-    PopulateMenu( pw, pew, aszEffectsAssignName, CTRL_FX_ASSIGN );
+    PopulateMenu( pw, pew, aszEffectsAssignName,
+		  VAmp2( pva ) ? CTRL_FX_ASSIGN_V2 : CTRL_FX_ASSIGN_V1 );
     pew->pwEffectsAssign = pw;
 
     /* Name */
@@ -2043,7 +2087,8 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 		       gtk_label_new( "version " VERSION ) );
     
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
-		       gtk_label_new( "\xC2\xA9 Copyright Gary Wong, 2002" ) );
+		       gtk_label_new( "\xC2\xA9 Copyright Gary Wong, "
+				      "2002, 2003" ) );
 
     pwLabel = gtk_label_new( "Free V-AMP is free software, covered "
 			     "by the GNU General Public License "
@@ -2446,16 +2491,26 @@ static void Print( vamp *pva, guint nIgnore, GtkWidget *pwItem ) {
 		     pva->achPreset[ i ][ PARM_REVERB_MIX ] );
 	else
 	    fputs( " () () ", pf );
-	    
-	fprintf( pf, "(%s) (%s) (%d) (%d) (%d) (%d) (%d) (%d)\n",
-		 AmpName( pva->achPreset[ i ][ PARM_AMP_TYPE ] ),
-		 pva->achPreset[ i ][ PARM_DRIVE ] ? "\267" : "",
-		 pva->achPreset[ i ][ PARM_AMP_GAIN ],
-		 pva->achPreset[ i ][ PARM_AMP_BASS ],
-		 pva->achPreset[ i ][ PARM_AMP_MID ],
-		 pva->achPreset[ i ][ PARM_AMP_TREBLE ],
-		 pva->achPreset[ i ][ PARM_AMP_PRESENCE ],
-		 pva->achPreset[ i ][ PARM_AMP_VOL ] );
+
+	if( !VAmp2( pva ) )
+	    fprintf( pf, "(%s) (%s) (%d) (%d) (%d) (%d) (n/a) (%d)\n",
+		     AmpName( pva, pva->achPreset[ i ][ PARM_AMP_TYPE ] ),
+		     pva->achPreset[ i ][ PARM_DRIVE ] ? "\267" : "",
+		     pva->achPreset[ i ][ PARM_AMP_GAIN ],
+		     pva->achPreset[ i ][ PARM_AMP_BASS ],
+		     pva->achPreset[ i ][ PARM_AMP_MID ],
+		     pva->achPreset[ i ][ PARM_AMP_TREBLE ],
+		     pva->achPreset[ i ][ PARM_AMP_VOL ] );
+	else
+	    fprintf( pf, "(%s) (%s) (%d) (%d) (%d) (%d) (%d) (%d)\n",
+		     AmpName( pva, pva->achPreset[ i ][ PARM_AMP_TYPE ] ),
+		     pva->achPreset[ i ][ PARM_DRIVE ] ? "\267" : "",
+		     pva->achPreset[ i ][ PARM_AMP_GAIN ],
+		     pva->achPreset[ i ][ PARM_AMP_BASS ],
+		     pva->achPreset[ i ][ PARM_AMP_MID ],
+		     pva->achPreset[ i ][ PARM_AMP_TREBLE ],
+		     pva->achPreset[ i ][ PARM_AMP_PRESENCE_V2 ],
+		     pva->achPreset[ i ][ PARM_AMP_VOL ] );
 	fprintf( pf, " (%s) (%s)]\n",
 		 CabinetName( pva->achPreset[ i ][ PARM_CABINET_TYPE ] ),
 		 EffectsAssignName( pva->achPreset[ i ]
@@ -2904,16 +2959,18 @@ static void HandleControlChange( vamp *pva, char iController, char nValue ) {
     pchPreset = pva->achPreset[ PRESET_CURRENT ];
 
     if( ( iController < CTRL_AMP_GAIN ) ||
-	( iController > CTRL_AMP_TYPE ) ||
+	( iController > CTRL_AMP_TYPE_V2 ) ||
 	( ( iController > CTRL_WAH ) && ( iController < CTRL_PRE_FX_TYPE ) ) )
 	/* ignore */
 	return;
-    else if( ( iController == CTRL_AMP_TYPE_DEFAULT ) ||
+    else if( ( VAmp2( pva ) && iController == CTRL_AMP_TYPE_DEFAULT_V2 ) ||
 	     ( iController == CTRL_FX_TYPE_DEFAULT ) )
 	RequestAllControllers( pva );
-    else if( iController == CTRL_FX_ASSIGN )
+    else if( ( !VAmp2( pva ) && iController == CTRL_FX_ASSIGN_V1 ) ||
+	     ( VAmp2( pva ) && iController == CTRL_FX_ASSIGN_V2 ) )
 	pchPreset[ PARM_FX_MIX_ASSIGN ] = nValue;
-    else if( iController == CTRL_AMP_TYPE )
+    else if( ( !VAmp2( pva ) && iController == CTRL_AMP_TYPE_V1 ) ||
+	     ( VAmp2( pva ) && iController == CTRL_AMP_TYPE_V2 ) )
 	pchPreset[ PARM_AMP_TYPE ] = nValue;
     else if( iController < CTRL_PRE_FX_TYPE )
 	pchPreset[ iController - CTRL_AMP_GAIN + PARM_AMP_GAIN ] = nValue;
@@ -2954,7 +3011,7 @@ extern int main( int argc, char *argv[] ) {
     GdkPixbuf *ppb;
     GtkIconFactory *pif;
     char szDevice[ 256 ];
-    int i;
+    int i, fVAmp1 = FALSE;
     vamp va;
     int ch;
     static struct option ao[] = {
@@ -2962,6 +3019,7 @@ extern int main( int argc, char *argv[] ) {
 	{ "device", required_argument, NULL, 'd' },
         { "help", no_argument, NULL, 'h' },
         { "no-midi", no_argument, NULL, 'n' },
+	{ "v-amp-1", no_argument, NULL, '1' },
         { "version", no_argument, NULL, 'v' },
         { NULL, 0, NULL, 0 }
     };
@@ -2993,8 +3051,12 @@ extern int main( int argc, char *argv[] ) {
     
     LoadPreferences();
     
-    while( ( ch = getopt_long( argc, argv, "c:d:hnv", ao, NULL ) ) >= 0 )
+    while( ( ch = getopt_long( argc, argv, "1c:d:hnv", ao, NULL ) ) >= 0 )
 	switch( ch ) {
+	case '1':
+	    fVAmp1 = TRUE;
+	    break;
+	    
 	case 'c':
 	    /* select MIDI channel */
 	    if( ( va.iChannel = atoi( optarg ) - 1 ) > 0x0F ) {
@@ -3051,11 +3113,15 @@ extern int main( int argc, char *argv[] ) {
 	g_io_add_watch( va.pioc, G_IO_IN, (GIOFunc) ReadIOC, &va );
     }
     
-    if( !IdentifyDevice( &va, NULL, szDevice ) )
+    if( !IdentifyDevice( &va, NULL, szDevice ) ) {
 	va.szDevice = szDevice;
-    else {
+	if( VAmp2( &va ) && fVAmp1 )
+	    fprintf( stderr, "%s: V-AMP 2 detected, ignoring V-AMP 1 "
+		     "specification\n", va.szMidiDevice );
+    } else {
 	va.szDevice = "No device";
 	va.h = -1;
+	va.nModelID = fVAmp1 ? ID_MODEL_V_AMP_1 : ID_MODEL_V_AMP_2;
     }
     
     if( argv[ optind ] && !ReadPresetsFile( &va, NULL, argv[ optind ] ) )

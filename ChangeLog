@@ -1,3 +1,8 @@
+Mon Jan 20 13:37:46 2003  Gary Wong  <gtw@gnu.org>
+
+	* freevamp.c: Various patches to support the V-AMP 1.  Version
+	0.9.1 pre-released.
+
 Thu Jul 25 16:46:00 2002  Gary Wong  <gtw@gnu.org>
 
 	* Version 0.9 pre-released.
