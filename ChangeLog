@@ -1,3 +1,10 @@
+2003-01-23  gettextize  <bug-gnu-gettext@gnu.org>
+
+	* Makefile.am (SUBDIRS): New variable.
+	(ACLOCAL_AMFLAGS): New variable.
+	(EXTRA_DIST): Add config.rpath.
+	* configure.in (AC_OUTPUT): Add intl/Makefile,
+
 Wed Jan 22 09:52:48 2003  Gary Wong  <gtw@gnu.org>
 
 	* freevamp.c (CreateEditorWindow): Create all amp widgets, even

@@ -1,0 +1,992 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR Gary Wong
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2003-01-24 09:32-0500\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: freevamp.c:251 freevamp.c:272 freevamp.c:288
+msgid "None"
+msgstr ""
+
+#: freevamp.c:251 freevamp.c:310
+msgid "Compressor"
+msgstr ""
+
+#: freevamp.c:252 freevamp.c:310
+msgid "Auto wah"
+msgstr ""
+
+#: freevamp.c:253 freevamp.c:313
+msgid "Rotary"
+msgstr ""
+
+#: freevamp.c:253 freevamp.c:311
+msgid "Phaser"
+msgstr ""
+
+#: freevamp.c:253 freevamp.c:312
+msgid "Tremolo"
+msgstr ""
+
+#: freevamp.c:254
+msgid "Mono chorus"
+msgstr ""
+
+#: freevamp.c:254
+msgid "Stereo chorus"
+msgstr ""
+
+#: freevamp.c:255
+msgid "Mono flanger"
+msgstr ""
+
+#: freevamp.c:255
+msgid "Stereo flanger"
+msgstr ""
+
+#: freevamp.c:257 freevamp.c:303 freevamp.c:1698
+msgid "Delay"
+msgstr ""
+
+#: freevamp.c:257 freevamp.c:303
+msgid "Echo"
+msgstr ""
+
+#: freevamp.c:257 freevamp.c:304
+msgid "Ping pong"
+msgstr ""
+
+#: freevamp.c:259
+msgid "Tiny room"
+msgstr ""
+
+#: freevamp.c:259
+msgid "Small room"
+msgstr ""
+
+#: freevamp.c:260
+msgid "Medium room"
+msgstr ""
+
+#: freevamp.c:260
+msgid "Large room"
+msgstr ""
+
+#: freevamp.c:261
+msgid "Ultra room"
+msgstr ""
+
+#: freevamp.c:261
+msgid "Small spring"
+msgstr ""
+
+#: freevamp.c:262
+msgid "Medium spring"
+msgstr ""
+
+#: freevamp.c:262
+msgid "Short ambience"
+msgstr ""
+
+#: freevamp.c:263
+msgid "Long ambience"
+msgstr ""
+
+#: freevamp.c:264 freevamp.c:272
+msgid "American Blues"
+msgstr ""
+
+#: freevamp.c:264 freevamp.c:273
+msgid "Modern Class A"
+msgstr ""
+
+#: freevamp.c:265 freevamp.c:274
+msgid "Tweed Combo"
+msgstr ""
+
+#: freevamp.c:265 freevamp.c:275
+msgid "Classic Clean"
+msgstr ""
+
+#: freevamp.c:266 freevamp.c:276
+msgid "British Blues"
+msgstr ""
+
+#: freevamp.c:266 freevamp.c:277
+msgid "British Class A"
+msgstr ""
+
+#: freevamp.c:267 freevamp.c:278
+msgid "British Classic"
+msgstr ""
+
+#: freevamp.c:267 freevamp.c:279
+msgid "British Hi Gain"
+msgstr ""
+
+#: freevamp.c:268 freevamp.c:280
+msgid "Rectified Hi Gain"
+msgstr ""
+
+#: freevamp.c:268 freevamp.c:281
+msgid "Modern Hi Gain"
+msgstr ""
+
+#: freevamp.c:269 freevamp.c:282
+msgid "Fuzz Box"
+msgstr ""
+
+#: freevamp.c:269 freevamp.c:283
+msgid "Ultimate V-AMP"
+msgstr ""
+
+#: freevamp.c:270 freevamp.c:284
+msgid "Drive V-AMP"
+msgstr ""
+
+#: freevamp.c:270 freevamp.c:285
+msgid "Crunch V-AMP"
+msgstr ""
+
+#: freevamp.c:271 freevamp.c:286
+msgid "Clean V-AMP"
+msgstr ""
+
+#: freevamp.c:271 freevamp.c:287
+msgid "Tube Pre-amp"
+msgstr ""
+
+#: freevamp.c:272
+msgid "And Deluxe"
+msgstr ""
+
+#: freevamp.c:273
+msgid "Custom Class A"
+msgstr ""
+
+#: freevamp.c:274
+msgid "Small Combo"
+msgstr ""
+
+#: freevamp.c:275
+msgid "Black Twin"
+msgstr ""
+
+#: freevamp.c:276
+msgid "And Custom"
+msgstr ""
+
+#: freevamp.c:277
+msgid "Non Top Boost"
+msgstr ""
+
+#: freevamp.c:278
+msgid "Classic 50W"
+msgstr ""
+
+#: freevamp.c:279
+msgid "British Class A 15W"
+msgstr ""
+
+#: freevamp.c:280
+msgid "Rectified Head"
+msgstr ""
+
+#: freevamp.c:281
+msgid "Savage Beast"
+msgstr ""
+
+#: freevamp.c:282
+msgid "Custom Hi Gain"
+msgstr ""
+
+#: freevamp.c:283
+msgid "Ultimate Plus"
+msgstr ""
+
+#: freevamp.c:284
+msgid "California Drive"
+msgstr ""
+
+#: freevamp.c:285
+msgid "Custom Drive"
+msgstr ""
+
+#: freevamp.c:286
+msgid "California Clean"
+msgstr ""
+
+#: freevamp.c:287
+msgid "Custom Clean"
+msgstr ""
+
+#: freevamp.c:288
+msgid "1 x 8\" Vintage Tweed"
+msgstr ""
+
+#: freevamp.c:289
+msgid "4 x 10\" Vintage Bass"
+msgstr ""
+
+#: freevamp.c:290
+msgid "4 x 10\" V-AMP Custom"
+msgstr ""
+
+#: freevamp.c:291
+msgid "1 x 12\" Mid Combo"
+msgstr ""
+
+#: freevamp.c:292
+msgid "1 x 12\" Blackface"
+msgstr ""
+
+#: freevamp.c:293
+msgid "1 x 12\" Brit '60"
+msgstr ""
+
+#: freevamp.c:294
+msgid "1 x 12\" Deluxe '52"
+msgstr ""
+
+#: freevamp.c:295
+msgid "2 x 12\" Twin Combo"
+msgstr ""
+
+#: freevamp.c:296
+msgid "2 x 12\" U.S. Class A"
+msgstr ""
+
+#: freevamp.c:297
+msgid "2 x 12\" V-AMP Custom"
+msgstr ""
+
+#: freevamp.c:298
+msgid "2 x 12\" Brit '67"
+msgstr ""
+
+#: freevamp.c:299
+msgid "4 x 12\" Vintage 30"
+msgstr ""
+
+#: freevamp.c:300
+msgid "4 x 12\" Standard '78"
+msgstr ""
+
+#: freevamp.c:301
+msgid "4 x 12\" Off Axis"
+msgstr ""
+
+#: freevamp.c:302
+msgid "4 x 12\" V-AMP Custom"
+msgstr ""
+
+#: freevamp.c:304
+msgid "Phaser/Delay"
+msgstr ""
+
+#: freevamp.c:305
+msgid "Flanger/Delay 1"
+msgstr ""
+
+#: freevamp.c:306
+msgid "Flanger/Delay 2"
+msgstr ""
+
+#: freevamp.c:307
+msgid "Chorus/Delay 1"
+msgstr ""
+
+#: freevamp.c:308
+msgid "Chorus/Delay 2"
+msgstr ""
+
+#: freevamp.c:309
+msgid "Chorus/Compressor"
+msgstr ""
+
+#: freevamp.c:311
+msgid "Chorus"
+msgstr ""
+
+#: freevamp.c:312
+msgid "Flanger"
+msgstr ""
+
+#: freevamp.c:314 freevamp.c:316
+msgid "Spd"
+msgstr ""
+
+#: freevamp.c:314 freevamp.c:316
+msgid "Dpt"
+msgstr ""
+
+#: freevamp.c:314
+msgid "Off"
+msgstr ""
+
+#: freevamp.c:315
+msgid "Frq"
+msgstr ""
+
+#: freevamp.c:316 freevamp.c:318
+msgid "Fdb"
+msgstr ""
+
+#: freevamp.c:317 freevamp.c:319
+msgid "Mix"
+msgstr ""
+
+#: freevamp.c:318
+msgid "Tim"
+msgstr ""
+
+#: freevamp.c:318
+msgid "Spr"
+msgstr ""
+
+#: freevamp.c:320
+msgid "Gan"
+msgstr ""
+
+#: freevamp.c:320
+msgid "Bas"
+msgstr ""
+
+#: freevamp.c:320
+msgid "Mid"
+msgstr ""
+
+#: freevamp.c:320
+msgid "Tre"
+msgstr ""
+
+#: freevamp.c:321
+msgid "Pre"
+msgstr ""
+
+#: freevamp.c:321
+msgid "Vol"
+msgstr ""
+
+#: freevamp.c:371
+msgid "n/a"
+msgstr ""
+
+#: freevamp.c:472
+msgid "Wah Pedal"
+msgstr ""
+
+#: freevamp.c:474
+msgid "Volume Pedal"
+msgstr ""
+
+#: freevamp.c:476
+msgid "Amp Gain"
+msgstr ""
+
+#: freevamp.c:478
+msgid "Amp Treble"
+msgstr ""
+
+#: freevamp.c:480
+msgid "Amp Mid"
+msgstr ""
+
+#: freevamp.c:482
+msgid "Amp Bass"
+msgstr ""
+
+#: freevamp.c:484
+msgid "Amp Vol"
+msgstr ""
+
+#: freevamp.c:486
+msgid "Presence"
+msgstr ""
+
+#: freevamp.c:486 freevamp.c:541
+msgid "Assign Effects"
+msgstr ""
+
+#: freevamp.c:488
+msgid "Reverb Mix"
+msgstr ""
+
+#: freevamp.c:490
+msgid "Amp Type with default cabinet"
+msgstr ""
+
+#: freevamp.c:491
+msgid "Amp Type"
+msgstr ""
+
+#: freevamp.c:493
+msgid "Fx Type with defaults"
+msgstr ""
+
+#: freevamp.c:495
+msgid "Fx Enable"
+msgstr ""
+
+#: freevamp.c:497
+msgid "Reverb Enable"
+msgstr ""
+
+#: freevamp.c:499
+msgid "Cabinet Type"
+msgstr ""
+
+#: freevamp.c:501
+msgid "Reverb Type"
+msgstr ""
+
+#: freevamp.c:503
+msgid "Noise Gate Level"
+msgstr ""
+
+#: freevamp.c:505 freevamp.c:1764
+msgid "Drive"
+msgstr ""
+
+#: freevamp.c:507
+msgid "Wah position"
+msgstr ""
+
+#: freevamp.c:509
+msgid "pre Effect Type"
+msgstr ""
+
+#: freevamp.c:511
+msgid "pre Effect 1"
+msgstr ""
+
+#: freevamp.c:513
+msgid "pre Effect 2"
+msgstr ""
+
+#: freevamp.c:515
+msgid "pre Effect 3"
+msgstr ""
+
+#: freevamp.c:517
+msgid "pre Effect 4"
+msgstr ""
+
+#: freevamp.c:519
+msgid "Delay Type"
+msgstr ""
+
+#: freevamp.c:521
+msgid "Delay Time hi"
+msgstr ""
+
+#: freevamp.c:523
+msgid "Delay Time lo"
+msgstr ""
+
+#: freevamp.c:525
+msgid "Delay Spread"
+msgstr ""
+
+#: freevamp.c:527
+msgid "Delay Feedback"
+msgstr ""
+
+#: freevamp.c:529
+msgid "Delay Mix"
+msgstr ""
+
+#: freevamp.c:531
+msgid "post Fx Mode"
+msgstr ""
+
+#: freevamp.c:533
+msgid "post Fx 1"
+msgstr ""
+
+#: freevamp.c:535
+msgid "post Fx 2"
+msgstr ""
+
+#: freevamp.c:537
+msgid "post Fx 3"
+msgstr ""
+
+#: freevamp.c:539
+msgid "post Fx Mix"
+msgstr ""
+
+#: freevamp.c:543
+msgid "Amp Type w/o cabinet change"
+msgstr ""
+
+#: freevamp.c:545
+msgid "Tap"
+msgstr ""
+
+#: freevamp.c:547
+msgid "Request Controls"
+msgstr ""
+
+#: freevamp.c:549
+msgid "Preset Name"
+msgstr ""
+
+#: freevamp.c:551
+msgid "Tuner Bypass Volume"
+msgstr ""
+
+#: freevamp.c:553
+msgid "Tuner Centre Frequency"
+msgstr ""
+
+#: freevamp.c:555
+msgid "Configuration"
+msgstr ""
+
+#: freevamp.c:557
+msgid "Live EQ Treble"
+msgstr ""
+
+#: freevamp.c:559
+msgid "Live EQ Mid"
+msgstr ""
+
+#: freevamp.c:561
+msgid "Live EQ Bass"
+msgstr ""
+
+#: freevamp.c:563
+msgid "unknown"
+msgstr ""
+
+#: freevamp.c:599 freevamp.c:617
+msgid "System Clock"
+msgstr ""
+
+#: freevamp.c:602
+msgid "System Tick"
+msgstr ""
+
+#: freevamp.c:605
+msgid "System Start"
+msgstr ""
+
+#: freevamp.c:608
+msgid "System Continue"
+msgstr ""
+
+#: freevamp.c:611
+msgid "System Stop"
+msgstr ""
+
+#: freevamp.c:614
+msgid "System Active Sense"
+msgstr ""
+
+#: freevamp.c:621
+msgid "System Tune Request"
+msgstr ""
+
+#: freevamp.c:629
+#, c-format
+msgid "System Exclusive: %d bytes"
+msgstr ""
+
+#: freevamp.c:648
+#, c-format
+msgid "Note %d (%s%d) %s (velocity %d)"
+msgstr ""
+
+#: freevamp.c:653
+msgid "off"
+msgstr ""
+
+#: freevamp.c:654
+msgid "on"
+msgstr ""
+
+#: freevamp.c:662
+#, c-format
+msgid "Note %d (%s%d) aftertouch (pressure %d)"
+msgstr ""
+
+#: freevamp.c:676
+#, c-format
+msgid "Controller %d (%s): position %d"
+msgstr ""
+
+#: freevamp.c:682
+#, c-format
+msgid "Controller %d (%s): character '%c'"
+msgstr ""
+
+#: freevamp.c:688
+#, c-format
+msgid "Controller %d (%s): %d"
+msgstr ""
+
+#: freevamp.c:700
+#, c-format
+msgid "Program %d (%d%c, %s)"
+msgstr ""
+
+#: freevamp.c:707
+#, c-format
+msgid "Program %d (Tuner)"
+msgstr ""
+
+#: freevamp.c:710
+#, c-format
+msgid "Program %d (unknown)"
+msgstr ""
+
+#: freevamp.c:717
+#, c-format
+msgid "Channel pressure %d\n"
+msgstr ""
+
+#: freevamp.c:724
+#, c-format
+msgid "Pitch bend %d (%dc)"
+msgstr ""
+
+#: freevamp.c:735
+#, c-format
+msgid "System MTC quarter frame %d\n"
+msgstr ""
+
+#: freevamp.c:744
+#, c-format
+msgid "System Song position %d"
+msgstr ""
+
+#: freevamp.c:752
+#, c-format
+msgid "System Song select %d\n"
+msgstr ""
+
+#: freevamp.c:830
+msgid "Free V-AMP - Progress"
+msgstr ""
+
+#: freevamp.c:1130
+msgid "Rat"
+msgstr ""
+
+#: freevamp.c:1229
+#, c-format
+msgid "Free V-AMP - %s"
+msgstr ""
+
+#: freevamp.c:1426 freevamp.c:1490 freevamp.c:2154
+msgid "Free V-AMP - Open"
+msgstr ""
+
+#: freevamp.c:1485 freevamp.c:1975
+#, c-format
+msgid "%s: not a valid V-AMP presets file"
+msgstr ""
+
+#: freevamp.c:1620
+msgid "Noise gate"
+msgstr ""
+
+#: freevamp.c:1632
+msgid "Wah"
+msgstr ""
+
+#: freevamp.c:1644
+msgid "Pre effects"
+msgstr ""
+
+#: freevamp.c:1671
+msgid "Modulation"
+msgstr ""
+
+#: freevamp.c:1729
+msgid "Reverb"
+msgstr ""
+
+#: freevamp.c:1749
+msgid "Amp"
+msgstr ""
+
+#: freevamp.c:1790
+msgid "Cabinet"
+msgstr ""
+
+#: freevamp.c:1799
+msgid "Effects assign"
+msgstr ""
+
+#: freevamp.c:1809
+msgid "Name"
+msgstr ""
+
+#: freevamp.c:1834
+#, c-format
+msgid "Free V-AMP - Log (%s)"
+msgstr ""
+
+#: freevamp.c:1856
+msgid "Device"
+msgstr ""
+
+#: freevamp.c:1860
+msgid "Channel"
+msgstr ""
+
+#: freevamp.c:1864
+msgid "Status"
+msgstr ""
+
+#: freevamp.c:1868
+msgid "Description"
+msgstr ""
+
+#: freevamp.c:1895
+msgid "No file"
+msgstr ""
+
+#: freevamp.c:1896
+#, c-format
+msgid "Free V-AMP - %s (%s)"
+msgstr ""
+
+#: freevamp.c:1987
+#, c-format
+msgid ""
+"Are you sure you want to overwrite all device presets with the contents of "
+"file %s?\n"
+"(Please note that you must enter MIDI mode on the V-AMP before continuing.)"
+msgstr ""
+
+#: freevamp.c:2050
+msgid "Free V-AMP - Copying conditions"
+msgstr ""
+
+#: freevamp.c:2054
+msgid "Free V-AMP - Warranty"
+msgstr ""
+
+#: freevamp.c:2074
+msgid "About Free V-AMP"
+msgstr ""
+
+#: freevamp.c:2075
+msgid "Copying conditions"
+msgstr ""
+
+#: freevamp.c:2077
+msgid "Warranty"
+msgstr ""
+
+#: freevamp.c:2087
+msgid "Free V-AMP"
+msgstr ""
+
+#: freevamp.c:2111
+msgid " Copyright Gary Wong, 2002, 2003"
+msgstr ""
+
+#: freevamp.c:2114
+msgid ""
+"Free V-AMP is free software, covered by the GNU General Public License "
+"version 2, and you are welcome to change it and/or distribute copies of it "
+"under certain conditions.  There is absolutely no warranty for Free V-AMP."
+msgstr ""
+
+#: freevamp.c:2199
+msgid "Free V-AMP - Preferences"
+msgstr ""
+
+#: freevamp.c:2211
+msgid "Log MIDI events"
+msgstr ""
+
+#: freevamp.c:2223
+msgid "Maximum log length:"
+msgstr ""
+
+#: freevamp.c:2229
+msgid "Scroll to show new events"
+msgstr ""
+
+#: freevamp.c:2238
+msgid "Printing"
+msgstr ""
+
+#: freevamp.c:2250
+msgid "Print command:"
+msgstr ""
+
+#: freevamp.c:2255
+msgid "ISO A4"
+msgstr ""
+
+#: freevamp.c:2259
+msgid "U.S. Letter"
+msgstr ""
+
+#: freevamp.c:2385
+msgid "The paper size selected is too small."
+msgstr ""
+
+#: freevamp.c:2400
+msgid "Free V-AMP (Untitled)"
+msgstr ""
+
+#: freevamp.c:2458
+#, c-format
+msgid "(Compressor) () (%s:1) () ()\n"
+msgstr ""
+
+#: freevamp.c:2465
+#, c-format
+msgid "(Auto wah) (%d) (%d) (%d) (%d)\n"
+msgstr ""
+
+#: freevamp.c:2544
+msgid ""
+"/columntitle [ (Noise gate) (Pre Effect) () () () () \n"
+"  (Post Effect) () () () () (Delay) () () () () (Reverb) ()\n"
+"  (Amplifier) () () () () () () () (Cabinet)\n"
+"  (Effects Assign) ] def\n"
+"\n"
+msgstr ""
+
+#: freevamp.c:2548
+msgid ""
+"/columnsubtitle [ ((dB)) () ((ms)) (D) (O) (F) \n"
+"  () ((ms)) (D) (F) (M) () ((ms)) (S) (F) (M) () (M)\n"
+"  () (Drive) (G) (B) (M) (T) (P) (V) ()\n"
+"  () ] def\n"
+"\n"
+msgstr ""
+
+#: freevamp.c:2610 freevamp.c:2689
+msgid "2 444 moveto (Name) show\n"
+msgstr ""
+
+#: freevamp.c:2806
+msgid "Free V-AMP - Save"
+msgstr ""
+
+#: freevamp.c:2818
+#, c-format
+msgid "Are you sure you want to overwrite file %s?"
+msgstr ""
+
+#: freevamp.c:2845
+msgid "/_File"
+msgstr ""
+
+#: freevamp.c:2846
+msgid "/_File/_Open..."
+msgstr ""
+
+#: freevamp.c:2848
+msgid "/_File/_Save"
+msgstr ""
+
+#: freevamp.c:2850
+msgid "/_File/_Save As..."
+msgstr ""
+
+#: freevamp.c:2852 freevamp.c:2855 freevamp.c:2858
+msgid "/_File/-"
+msgstr ""
+
+#: freevamp.c:2853
+msgid "/_File/_Print"
+msgstr ""
+
+#: freevamp.c:2856
+msgid "/_File/_Refresh"
+msgstr ""
+
+#: freevamp.c:2859
+msgid "/_File/_Quit"
+msgstr ""
+
+#: freevamp.c:2861
+msgid "/_Edit"
+msgstr ""
+
+#: freevamp.c:2862
+msgid "/_Edit/_Copy"
+msgstr ""
+
+#: freevamp.c:2864
+msgid "/_Edit/_Paste"
+msgstr ""
+
+#: freevamp.c:2866
+msgid "/_Edit/-"
+msgstr ""
+
+#: freevamp.c:2867
+msgid "/_Edit/P_references..."
+msgstr ""
+
+#: freevamp.c:2869
+msgid "/_Help"
+msgstr ""
+
+#: freevamp.c:2870
+msgid "/_Help/About Free V-AMP"
+msgstr ""
+
+#: freevamp.c:2900
+msgid "/Edit/Paste"
+msgstr ""
+
+#: freevamp.c:3096
+#, c-format
+msgid "%s: channel \"%s\" invalid\n"
+msgstr ""
+
+#: freevamp.c:3109
+#, c-format
+msgid ""
+"Usage: %s [option ...] [preset file]\n"
+"Options:\n"
+"  -c C, --channel=C  Use MIDI channel C\n"
+"  -d D, --device=D   Use MIDI device D\n"
+"  -h, --help         Display usage and exit\n"
+"  -n, --no-midi      Do not use external V-AMP\n"
+"  -v, --version      Show version information and exit\n"
+"\n"
+"Please report bugs to <gtw@gnu.org>.\n"
+msgstr ""
+
+#: freevamp.c:3127
+#, c-format
+msgid "Free V-AMP %s\n"
+msgstr ""
+
+#: freevamp.c:3135
+#, c-format
+msgid "%s: only one preset file may be specified\n"
+msgstr ""
+
+#: freevamp.c:3152
+#, c-format
+msgid "%s: V-AMP 2 detected, ignoring V-AMP 1 specification\n"
+msgstr ""
+
+#: freevamp.c:3155
+msgid "No device"
+msgstr ""

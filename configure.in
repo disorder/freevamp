@@ -14,4 +14,6 @@ AC_PROG_CC
 dnl Checks for libraries.
 AM_PATH_GTK_2_0(2.0.0)
 
-AC_OUTPUT(Makefile)
+AM_GNU_GETTEXT
+
+AC_OUTPUT(Makefile intl/Makefile po/Makefile.in po/Makefile m4/Makefile )
