@@ -141,8 +141,10 @@
 #define MIDI_OPERATION 0xF0
 #define MIDI_CTRLCHANGE 0xB0
 #define MIDI_PROGCHANGE 0xC0
+#define MIDI_SYSTEM 0xF0
 #define MIDI_SYSEX 0xF0
 #define MIDI_SYSEX_END 0xF7
+#define MIDI_SYSREALTIME 0xF8
 
 #define PROG_TUNER 0x7F
 
@@ -160,15 +162,17 @@ typedef struct _vamp {
     char nDeviceID, nModelID, iChannel, iProgram, nRunningStatus;
     char achPreset[ NUM_PRESETS ][ NUM_PARMS ];
     char achClipboard[ NUM_PARMS ];
-    int fClipboard;
+    int fClipboard, fSysex;
     char achCommand[ 3 ];
     int cchCommand;
     GtkWidget *pwEditor, *pwList;
     GtkAccelGroup *pag;
     struct _listwindow *plw;
     struct _editorwindow *pew;
+    void *pvSysex;
     void (*control)( struct _vamp *pv, char iController, char nValue );
     void (*program)( struct _vamp *pv, char iProgram );
+    void (*sysex)( struct _vamp *pv, unsigned char n, void *p );
 } vamp;
 
 static char *aszPreEffectsName[] = { "None", "Compressor", "Auto wah", NULL };
@@ -222,6 +226,7 @@ static char *aszAutoWahLabel[ 4 ] = { "Spd", "Dpt", "Off", "Frq" };
 static char *aszModulationLabel[ 4 ] = { "Spd", "Dpt", "Fdb", "Mix" };
 static char *aszDelayLabel[ 4 ] = { "Tim", "Spr", "Fdb", "Mix" };
 static char *aszAmpLabel[ 6 ] = { "Gan", "Bas", "Mid", "Tre", "Pre", "Vol" };
+static char szIcon[] = "freevamp-icon";
 
 static char achDefaultParm[ NUM_PARMS ] = {
     64, 64, 64, 64, 64, 0, 64, 32, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -229,13 +234,9 @@ static char achDefaultParm[ NUM_PARMS ] = {
     'U','n','n','a','m','e','d',' ',' ',' ',' ',' ',' ',' ',' ',' '
 };
 
-static GdkPixbuf *ppbIcon;
-
 static int ReadMIDI( vamp *pva ) {
 
-    char ach[ 1024 ], *pch;
-    fd_set fds;
-    struct timeval tv;
+    unsigned char ach[ 1024 ], *pch;
     int n;
 
     if( pva->h < 0 ) {
@@ -243,67 +244,109 @@ static int ReadMIDI( vamp *pva ) {
 	return -1;
     }
     
-    FD_ZERO( &fds );
-    
-    for(;;) {
-	FD_SET( pva->h, &fds );
-	
-	tv.tv_sec = 0;
-	tv.tv_usec = 0;
-	
-	if( ( n = select( FD_SETSIZE, &fds, NULL, NULL, &tv ) ) < 0 )
-	    /* error */
-	    return -1;
+    if( ( n = read( pva->h, ach, sizeof ach ) ) < 0 )
+	return -1;
 
-	if( !n )
-	    return 0;
+    for( pch = ach; n; pch++, n-- ) {
+	if( pva->fSysex && pva->sysex )
+	    pva->sysex( pva, *pch, pva->pvSysex );
 
-	if( FD_ISSET( pva->h, &fds ) )
-	    if( ( n = read( pva->h, ach, sizeof ach ) ) < 0 )
-		return -1;
-
-	for( pch = ach; n; pch++, n-- ) {
-	    if( *pch & MIDI_STATUS ) {
-		/* FIXME handle MIDI system messages */
-	    
+	if( *pch & MIDI_STATUS ) {
+	    if( ( *pch & MIDI_SYSREALTIME ) != MIDI_SYSREALTIME ) {
 		pva->nRunningStatus = *pch;
 		pva->cchCommand = 0;
-	    } else if( pva->cchCommand < 3 ) {
+		pva->fSysex = *pch == MIDI_SYSEX;
+	    }
+	} else {
+	    if( pva->cchCommand < 3 )
 		pva->achCommand[ pva->cchCommand++ ] = *pch;
-		
-		switch( pva->nRunningStatus & MIDI_OPERATION ) {
-		case MIDI_CTRLCHANGE:
-		    if( pva->cchCommand >= 2 ) {
-			pva->control( pva, pva->achCommand[ 0 ],
-				      pva->achCommand[ 1 ] );
-			pva->cchCommand = 0;
-		    }
-		    break;
-		    
-		case MIDI_PROGCHANGE:
-		    pva->program( pva, pva->achCommand[ 0 ] );
+	    
+	    switch( pva->nRunningStatus & MIDI_OPERATION ) {
+	    case MIDI_CTRLCHANGE:
+		if( pva->cchCommand >= 2 ) {
+		    pva->control( pva, pva->achCommand[ 0 ],
+				  pva->achCommand[ 1 ] );
 		    pva->cchCommand = 0;
-		    break;
-
-		default:
-		    /* ignore */
 		}
+		break;
+		
+	    case MIDI_PROGCHANGE:
+		pva->program( pva, pva->achCommand[ 0 ] );
+		pva->cchCommand = 0;
+		break;
+
+	    default:
+		/* ignore */
 	    }
 	}
     }
+
+    return 0;
 }
 
-static unsigned char *ReadResponse( vamp *pva, GtkWindow *pwParent, int *cb,
-				    int fSysEx ) {
+typedef struct _sysexstate {
+    int cch, cchAlloc, cchExpected, cchOld, fFailed;
+    char *pch;
+    GtkWidget *pwProgress;
+} sysexstate;
 
-    /* FIXME it would be nice to integrate this function with
-       ReadMIDI somehow */
+static void HandleSysex( vamp *pva, unsigned char ch, void *p ) {
+
+    sysexstate *pses = p;
+
+    if( pses->fFailed )
+	return;
     
-    fd_set fds;
-    struct timeval tv;
-    int n, cch, cchAlloc;
-    char *pch, *pchEnd;
+    pses->cch++;
+
+    if( pses->cchExpected )
+	gtk_progress_bar_set_fraction( GTK_PROGRESS_BAR( pses->pwProgress ),
+				       (double) pses->cch /
+				       pses->cchExpected );
+    else
+	gtk_progress_bar_pulse( GTK_PROGRESS_BAR( pses->pwProgress ) );
+
+    if( ch == MIDI_SYSEX_END ) {
+	/* success */
+	pva->sysex = NULL; /* don't call us again */
+	gtk_main_quit();
+    } else if( !( ch & MIDI_STATUS ) ) {
+	pses->pch[ pses->cch++ ] = ch;
+
+	if( pses->cch < pses->cchAlloc )
+	    return;
+
+	if( ( pses->pch = realloc( pses->pch, pses->cchAlloc <<= 1 ) ) )
+	    return;
+    }
+
+    pses->fFailed = TRUE;
+    free( pses->pch );
+    pses->pch = NULL;
+    gtk_main_quit();
+}
+
+static gboolean SysexTimeout( gpointer p ) {
+
+    sysexstate *pses = p;
+
+    if( pses->cch == pses->cchOld ) {
+	pses->fFailed = TRUE;
+	free( pses->pch );
+	pses->pch = NULL;
+	gtk_main_quit();
+    } else
+	pses->cchOld = pses->cch;
+
+    return TRUE;
+}
+
+static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
+				 int cbExpected ) {
+
+    sysexstate ses;
     GtkWidget *pw, *pwProgress;
+    int idTimeout;
     
     if( pva->h < 0 ) {
 	errno = EBADF;
@@ -317,61 +360,30 @@ static unsigned char *ReadResponse( vamp *pva, GtkWindow *pwParent, int *cb,
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ), pwProgress );
     gtk_widget_show_all( pw );
 	
-    cch = 0;
-    pch = malloc( cchAlloc = 1024 );
-    
-    FD_ZERO( &fds );
+    ses.cch = ses.cchOld = 0;
+    ses.cchExpected = cbExpected;
+    ses.fFailed = FALSE;
+    if( ( ses.pch = malloc( ses.cchAlloc = 1024 ) ) ) {
+	pva->pvSysex = &ses;
+	pva->sysex = HandleSysex;
+	idTimeout = gtk_timeout_add( 1000, SysexTimeout, &ses );
 
-    for(;;) {
-	FD_SET( pva->h, &fds );
+	gtk_main();
 
-	tv.tv_sec = 1;
-	tv.tv_usec = 0;
-	
-	if( ( n = select( FD_SETSIZE, &fds, NULL, NULL, &tv ) ) < 0 ) {
-	    /* error */
-	    free( pch );
-	    gtk_widget_destroy( pw );
-	    return NULL;
-	}
-	
-	if( !n )
-	    /* timeout */
-	    break;
-	
-	if( FD_ISSET( pva->h, &fds ) ) {
-	    if( ( n = read( pva->h, pch + cch, cchAlloc - cch ) ) < 0 ) {
-		free( pch );
-		gtk_widget_destroy( pw );
-		return NULL;
-	    }
-
-	    cch += n;
-
-	    gtk_progress_bar_pulse( GTK_PROGRESS_BAR( pwProgress ) );
-	    
-	    /* FIXME handle MIDI realtime messages */
-	    
-	    if( fSysEx && ( pchEnd = memchr( pch + cch - n, MIDI_SYSEX_END,
-					     n ) ) ) {
-		cch = pchEnd - pch + 1;
-		break;
-	    }
-	}
-
-	if( cch == cchAlloc )
-	    if( !( pch = realloc( pch, cchAlloc <<= 1 ) ) ) {
-		gtk_widget_destroy( pw );
-		return NULL;
-	    }
+	gtk_timeout_remove( idTimeout );
+	pva->pvSysex = NULL;
+	pva->sysex = NULL;
     }
 
+    if( !ses.pch )
+	ses.cch = 0;
+    
     if( cb )
-	*cb = cch;
+	*cb = ses.cch;
 
     gtk_widget_destroy( pw );
     
-    return realloc( pch, cch );
+    return realloc( ses.pch, ses.cch );
 }
 
 static int ControlChange( vamp *pva, char iController, char nValue ) {
@@ -421,9 +433,7 @@ static int EndSysEx( vamp *pva ) {
 static int IdentifyDevice( vamp *pva, GtkWindow *pw, char ach[ 256 ] ) {
 
     int cb;
-    unsigned char *pchResponse, *pch0, *pch1;
-    static unsigned char achResponse[ 4 ] = { MIDI_SYSEX, ID_BEHRINGER1,
-					      ID_BEHRINGER2, ID_BEHRINGER3 };
+    unsigned char *pch;
     
     if( ReadMIDI( pva ) )
 	return -1;
@@ -434,27 +444,25 @@ static int IdentifyDevice( vamp *pva, GtkWindow *pw, char ach[ 256 ] ) {
     if( EndSysEx( pva ) < 0 )
 	return -1;
     
-    if( !( pchResponse = ReadResponse( pva, pw, &cb, TRUE ) ) )
+    if( !( pch = ReadSysex( pva, pw, &cb, 0 ) ) )
 	return -1;
 
-    if( !( pch0 = memchr( pchResponse, MIDI_SYSEX, cb ) ) ||
-	!( pch1 = memchr( pch0, MIDI_SYSEX_END, pchResponse + cb - pch0 ) ) ||
-	pch1 - pch0 < 7 || memcmp( pch0, achResponse, 4 ) ||
-	pch0[ 6 ] != CMD_IDENTIFY_RESPONSE ) {
-	free( pchResponse );
+    if( pch[ 0 ] != ID_BEHRINGER1 || pch[ 1 ] != ID_BEHRINGER2 ||
+	pch[ 2 ] != ID_BEHRINGER3 || pch[ 5 ] != CMD_IDENTIFY_RESPONSE ) {
+	free( pch );
 	return -1;
     }
     
-    pva->nDeviceID = pch0[ 4 ];
-    pva->nModelID = pch0[ 5 ];
+    pva->nDeviceID = pch[ 3 ];
+    pva->nModelID = pch[ 4 ];
 
-    if( ( cb = pch1 - pch0 - 7 ) > 255 )
+    if( ( cb -= 6 ) > 255 )
 	cb = 255;
 
-    memcpy( ach, pch0 + 7, cb );
+    memcpy( ach, pch + 6, cb );
     ach[ cb ] = 0;
 
-    free( pchResponse );
+    free( pch );
 
     return 0;
 }
@@ -547,14 +555,13 @@ static int RequestPreset( vamp *pva, GtkWindow *pw, char i,
     if( EndSysEx( pva ) < 0 )
 	return -1;
 
-    if( !( pch = ReadResponse( pva, pw, &cb, TRUE ) ) )
+    if( !( pch = ReadSysex( pva, pw, &cb, 8 + NUM_PARMS ) ) )
 	return -1;
 
-    if( pch[ 0 ] != MIDI_SYSEX || pch[ 1 ] != ID_BEHRINGER1 ||
-	pch[ 2 ] != ID_BEHRINGER2 || pch[ 3 ] != ID_BEHRINGER3 ||
-	pch[ 4 ] != pva->nDeviceID || pch[ 5 ] != pva->nModelID ||
-	pch[ 6 ] != CMD_WRITE_PRESET || pch[ 7 ] != i ||
-	pch[ 8 ] != NUM_PARMS ) {
+    if( pch[ 0 ] != ID_BEHRINGER1 || pch[ 1 ] != ID_BEHRINGER2 ||
+	pch[ 2 ] != ID_BEHRINGER3 || pch[ 3 ] != pva->nDeviceID ||
+	pch[ 4 ] != pva->nModelID || pch[ 5 ] != CMD_WRITE_PRESET ||
+	pch[ 6 ] != i || pch[ 7 ] != NUM_PARMS ) {
 	/* can't interpret response */
 	free( pch );
 	return -1;
@@ -580,14 +587,13 @@ static int RequestAllPresets( vamp *pva, GtkWindow *pw ) {
     if( EndSysEx( pva ) < 0 )
 	return -1;
 
-    if( !( pch = ReadResponse( pva, pw, &cb, TRUE ) ) )
+    if( !( pch = ReadSysex( pva, pw, &cb, 8 + NUM_PRESETS * NUM_PARMS ) ) )
 	return -1;
 
-    if( pch[ 0 ] != MIDI_SYSEX || pch[ 1 ] != ID_BEHRINGER1 ||
-	pch[ 2 ] != ID_BEHRINGER2 || pch[ 3 ] != ID_BEHRINGER3 ||
-	pch[ 4 ] != pva->nDeviceID || pch[ 5 ] != pva->nModelID ||
-	pch[ 6 ] != CMD_WRITE_ALL_PRESETS || pch[ 7 ] != NUM_PRESETS ||
-	pch[ 8 ] != NUM_PARMS ) {
+    if( pch[ 0 ] != ID_BEHRINGER1 || pch[ 1 ] != ID_BEHRINGER2 ||
+	pch[ 2 ] != ID_BEHRINGER3 || pch[ 3 ] != pva->nDeviceID ||
+	pch[ 4 ] != pva->nModelID || pch[ 5 ] != CMD_WRITE_ALL_PRESETS ||
+	pch[ 6 ] != NUM_PRESETS || pch[ 7 ] != NUM_PARMS ) {
 	/* can't interpret response */
 	free( pch );
 	return -1;
@@ -932,7 +938,7 @@ static void PopulateMenu( GtkWidget *pw, editorwindow *pew, char **ppch,
 static void CloseEditor( GtkWidget *pw, gint nResponse, vamp *pva ) {
 
     if( nResponse == GTK_RESPONSE_ACCEPT ) {
-	/* FIXME write preset */
+	/* FIXME write preset? */
     }
     
     gtk_widget_destroy( pw );
@@ -1233,10 +1239,10 @@ static void About( gpointer *p, guint n, GtkWidget *pwItem ) {
 
     gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ),
 		       pwHbox = gtk_hbox_new( FALSE, 16 ) );
-    /* FIXME use themable stock image */
     gtk_box_pack_start( GTK_BOX( pwHbox ),
-			gtk_image_new_from_pixbuf( ppbIcon ), FALSE,
-			FALSE, 0 );
+			gtk_image_new_from_stock( szIcon,
+						  GTK_ICON_SIZE_DIALOG ),
+			FALSE, FALSE, 0 );
     pwLabel = gtk_label_new( NULL );
     gtk_label_set_markup( GTK_LABEL( pwLabel ),
 			  "<span font_desc=\"serif bold 48\">Free "
@@ -1414,7 +1420,8 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
 	{ "/_Edit/_Paste", "<control>V", Paste, 0, "<StockItem>",
 	  GTK_STOCK_PASTE },
 	{ "/_Help", NULL, NULL, 0, "<Branch>" },
-	{ "/_Help/About Free V-AMP", NULL, About, 0, NULL }
+	{ "/_Help/About Free V-AMP", NULL, About, 0, "<StockItem>",
+	  szIcon }
     };
     
     if( !( pva->plw = plw = malloc( sizeof( *plw ) ) ) )
@@ -1531,6 +1538,8 @@ static gboolean ReadIOC( GIOChannel *piocSource, GIOCondition ioc,
 extern int main( int argc, char *argv[] ) {
 
     GtkWidget *pw;
+    GdkPixbuf *ppb;
+    GtkIconFactory *pif;
     char szDevice[ 256 ];
     int i;
     vamp va;
@@ -1538,18 +1547,22 @@ extern int main( int argc, char *argv[] ) {
     
     gtk_init( &argc, &argv );
 
-    ppbIcon = gdk_pixbuf_new_from_inline( sizeof achFreeVAMPIcon,
-					  achFreeVAMPIcon, FALSE, NULL );
+    pif = gtk_icon_factory_new();
+    ppb = gdk_pixbuf_new_from_inline( sizeof achFreeVAMPIcon,
+				      achFreeVAMPIcon, FALSE, NULL );
+    gtk_icon_factory_add( pif, szIcon, gtk_icon_set_new_from_pixbuf( ppb ) );
+    gtk_icon_factory_add_default( pif );
     
     va.szMidiDevice = "/dev/midi00";
     va.nDeviceID = DEV_BROADCAST;
     va.nModelID = MOD_BROADCAST;
     va.iChannel = 0;
     va.iProgram = PRESET_CURRENT;
-    va.nRunningStatus = 0;
+    va.nRunningStatus = va.fSysex = 0;
     va.cchCommand = 0;
     va.control = HandleControlChange;
     va.program = HandleProgramChange;
+    va.sysex = NULL;
     va.pwEditor = va.pwList = NULL;
     va.fClipboard = FALSE;
     
@@ -1625,5 +1638,3 @@ extern int main( int argc, char *argv[] ) {
   status of the edit buffer!!!  To refresh the edit window, we should request
   all controllers; to refresh the list window, we should use a sysex preset
   request. */
-
-/* FIXME eliminate all calls to select(); do it in a recursive main loop */
