@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "fvicon.h"
@@ -193,6 +194,18 @@ extern char szCopying[], szWarranty[];
 #define DEV_BROADCAST 0x7F
 #define MOD_BROADCAST 0x7F
 
+#define POINTS_INCH 72
+#define POINTS_MM (POINTS_INCH/25.4)
+
+#define PAPER_ISO_A4_X (210*POINTS_MM)
+#define PAPER_ISO_A4_Y (297*POINTS_MM)
+
+#define PAPER_US_LETTER_X (8.5*POINTS_INCH)
+#define PAPER_US_LETTER_Y (11*POINTS_INCH)
+
+#define PRINT_AREA_X 451
+#define PRINT_AREA_Y 648
+
 typedef struct _vamp {
     int h; /* MIDI device file descriptor */
     GIOChannel *pioc;
@@ -216,7 +229,8 @@ typedef struct _vamp {
 } vamp;
 
 typedef struct _preferences {
-    int fLog, fLogScroll, cLogMax;
+    int fLog, fLogScroll, cLogMax, cxPaper, cyPaper;
+    char *szPrint;
 } preferences;
 
 static char *aszPreEffectsName[] = { "None", "Compressor", "Auto wah", NULL };
@@ -278,7 +292,11 @@ static char achDefaultParm[ NUM_PARMS ] = {
     'U','n','n','a','m','e','d',' ',' ',' ',' ',' ',' ',' ',' ',' '
 };
 
-static preferences pref = { FALSE, TRUE, 100 };
+static preferences pref = { FALSE, TRUE, 100, PAPER_ISO_A4_X, PAPER_ISO_A4_Y,
+			    NULL };
+
+static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
+		     char *szFormat, ... ) G_GNUC_PRINTF( 4, 5 );
 
 static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
 		     char *szFormat, ... ) {
@@ -1635,20 +1653,29 @@ static int ReadPresetsFile( vamp *pva, GtkWindow *pw, const char *pch ) {
 
     int h, c;
     char achPreset[ NUM_PRESETS ][ NUM_PARMS ];
+    struct stat st;
 
     if( ( h = open( pch, O_RDONLY ) ) < 0 ) {
 	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s", pch,
 		 g_strerror( errno ) );
 	return -1;
     }
-    
-    if( ( c = read( h, achPreset, sizeof achPreset ) ) < 0 ) {
+
+    if( fstat( h, &st ) < 0 ) {
 	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s", pch,
 		 g_strerror( errno ) );
 	return -1;
-    } else if( c < sizeof achPreset ) {
+    }
+
+    if( st.st_size != sizeof achPreset ) {
 	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
-		 "%s: not a valid V-AMP presets file" );
+		 "%s: not a valid V-AMP presets file", pch );
+	return -1;
+    }
+    
+    if( ( c = read( h, achPreset, sizeof achPreset ) ) != sizeof achPreset ) {
+	Message( pw, GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE, "%s: %s", pch,
+		 g_strerror( errno ) );
 	return -1;
     }
 
@@ -1854,8 +1881,8 @@ static void LogToggled( GtkWidget *pw, GtkWidget *pwBox ) {
 
 static void Preferences( vamp *pva, guint n, GtkWidget *pwItem ) {
 
-    GtkWidget *pwWindow, *pwFrame, *pwLog, *pwLogMax, *pwLogScroll, *pwVbox,
-	*pwHbox;
+    GtkWidget *pwWindow, *pwFrame, *pwLog, *pwLogMax, *pwLogScroll, *pwPrint,
+	*pwVbox, *pwHbox, *pwA4, *pwLetter;
     char *pchRC;
     FILE *pf;
     
@@ -1895,10 +1922,38 @@ static void Preferences( vamp *pva, guint n, GtkWidget *pwItem ) {
 				  pref.fLogScroll );
     gtk_container_add( GTK_CONTAINER( pwVbox ), pwLogScroll );
     
-    gtk_widget_show_all( pwWindow );
-    
     g_signal_connect( pwLog, "toggled", G_CALLBACK( LogToggled ), pwVbox );
     LogToggled( pwLog, pwVbox );
+    
+    pwFrame = gtk_frame_new( "Printing" );
+    gtk_container_set_border_width( GTK_CONTAINER( pwFrame ), 8 );
+    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pwWindow )->vbox ),
+		       pwFrame );
+    
+    pwVbox = gtk_vbox_new( FALSE, 0 );
+    gtk_container_set_border_width( GTK_CONTAINER( pwVbox ), 8 );
+    gtk_container_add( GTK_CONTAINER( pwFrame ), pwVbox );
+
+    pwHbox = gtk_hbox_new( FALSE, 0 );
+    gtk_container_add( GTK_CONTAINER( pwVbox ), pwHbox );
+    gtk_container_add( GTK_CONTAINER( pwHbox ),
+		       gtk_label_new( "Print command:" ) );
+    pwPrint = gtk_entry_new();
+    gtk_entry_set_text( GTK_ENTRY( pwPrint ), pref.szPrint );
+    gtk_container_add( GTK_CONTAINER( pwHbox ), pwPrint );
+
+    pwA4 = gtk_radio_button_new_with_label( NULL, "ISO A4" );
+    gtk_container_add( GTK_CONTAINER( pwVbox ), pwA4 );
+    
+    pwLetter = gtk_radio_button_new_with_label_from_widget(
+	GTK_RADIO_BUTTON( pwA4 ), "U.S. Letter" );
+    gtk_container_add( GTK_CONTAINER( pwVbox ), pwLetter );
+
+    gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( pwLetter ),
+				  pref.cxPaper == PAPER_US_LETTER_X &&
+				  pref.cyPaper == PAPER_US_LETTER_Y );
+    
+    gtk_widget_show_all( pwWindow );
     
     if( gtk_dialog_run( GTK_DIALOG( pwWindow ) ) == GTK_RESPONSE_ACCEPT ) {
 	pref.fLog = gtk_toggle_button_get_active( GTK_TOGGLE_BUTTON( pwLog ) );
@@ -1915,20 +1970,161 @@ static void Preferences( vamp *pva, guint n, GtkWidget *pwItem ) {
 	
 	LogTrimScroll( pva );
 
+	g_free( pref.szPrint );
+	pref.szPrint = gtk_editable_get_chars( GTK_EDITABLE( pwPrint ),
+					       0, -1 );
+
+	pref.cxPaper = gtk_toggle_button_get_active(
+	    GTK_TOGGLE_BUTTON( pwLetter ) ) ?
+	    PAPER_US_LETTER_X : PAPER_ISO_A4_X;
+	pref.cyPaper = gtk_toggle_button_get_active(
+	    GTK_TOGGLE_BUTTON( pwLetter ) ) ?
+	    PAPER_US_LETTER_Y : PAPER_ISO_A4_Y;
+	
 	pchRC = g_build_filename( g_get_home_dir(), RCFILE, NULL );
 	pf = fopen( pchRC, "w" );
 	g_free( pchRC );
 	fprintf( pf,
 		 "log %c\n"
 		 "log-max %d\n"
-		 "log-scroll %c\n",
+		 "log-scroll %c\n"
+		 "print-command %s\n"
+		 "print-paper-x %d\n"
+		 "print-paper-y %d\n",
 		 pref.fLog ? 'y' : 'n',
 		 pref.cLogMax,
-		 pref.fLogScroll ? 'y' : 'n' );
+		 pref.fLogScroll ? 'y' : 'n',
+		 pref.szPrint,
+		 pref.cxPaper,
+		 pref.cyPaper );
 	fclose( pf );
     }
 
     gtk_widget_destroy( pwWindow );
+}
+
+static void PostScriptEscape( FILE *pf, char *pch ) {
+
+    while( *pch ) {
+	switch( *pch ) {
+	case '\\':
+	    fputs( "\\\\", pf );
+	    break;
+	case '(':
+	    fputs( "\\(", pf );
+	    break;
+	case ')':
+	    fputs( "\\)", pf );
+	    break;
+	default:
+	    if( (unsigned char) *pch >= 0x80 )
+		fprintf( pf, "\\%030o", *pch );
+	    else
+		putc( *pch, pf );
+	    break;
+	}
+	pch++;
+    }
+}
+
+static void Print( vamp *pva, guint n, GtkWidget *pwItem ) {
+
+    FILE *pf;
+    time_t t;
+    char *sz, *pch;
+    int i;
+
+    if( pref.cxPaper < PRINT_AREA_X || pref.cyPaper < PRINT_AREA_Y ) {
+	Message( GTK_WINDOW( pva->pwList ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "The paper size selected is too small." );
+	return;	
+    }
+    
+    if( !( pf = popen( pref.szPrint, "w" ) ) ) {
+	Message( GTK_WINDOW( pva->pwList ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "%s: %s", pref.szPrint,
+		 g_strerror( errno ) );
+	return;
+    }
+
+    fputs( "%!PS-Adobe-3.0\n", pf );
+    
+    fputs( "%%Title: (", pf );
+    PostScriptEscape( pf, "Free V-AMP Presets" /* FIXME */ );
+    fputs( ")\n", pf );
+
+    fprintf( pf, "%%%%BoundingBox: %d %d %d %d\n",
+	     ( pref.cxPaper - PRINT_AREA_X ) >> 1,
+	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1,
+	     ( pref.cxPaper + PRINT_AREA_X ) >> 1,
+	     ( pref.cyPaper + PRINT_AREA_Y ) >> 1 );
+
+    time( &t );
+    sz = ctime( &t );
+    if( ( pch = strchr( sz, '\n' ) ) )
+	*pch = 0;
+    fprintf( pf, "%%%%CreationDate: (%s)\n", sz );
+    
+    fputs( "%%Creator: (Free V-AMP " VERSION ")\n"
+	   "%%DocumentData: Clean7Bit\n"
+	   "%%DocumentNeededResources: font Helvetica\n"
+	   "%%LanguageLevel: 1\n"
+	   "%%Orientation: Landscape\n"
+	   "%%Pages: 1\n"
+	   "%%EndComments\n"
+	   "%%BeginSetup\n"
+	   "%%IncludeResource: font Helvetica\n"
+	   "%%EndSetup\n", pf );
+
+    fputs( "%%Page: 1 1\n"
+	   "%%BeginPageSetup\n", pf );
+    
+    fprintf( pf, "/pageobj save def 90 rotate %d %d translate 1 setlinecap\n",
+	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1, 
+	     -( ( pref.cxPaper + PRINT_AREA_X ) >> 1 ) );
+    
+    fputs( "%%EndPageSetup\n", pf );
+
+    fputs( "/presetnames [\n", pf );
+    for( i = 0; i < NUM_PRESETS; i++ ) {
+	putc( '(', pf );
+	PostScriptEscape( pf, PresetName( pva->achPreset[ i ] ) );
+	putc( ')', pf );
+	putc( '\n', pf );
+    }
+    fputs( "] def\n", pf );
+    
+    fputs( "/Helvetica findfont 9 scalefont setfont\n", pf );
+    
+    fputs( "0 1 124 { "
+	   "dup dup "
+	   "5 mod 123 mul 95 add "
+	   "exch 5 idiv -17 mul 413 add "
+	   "moveto\n "
+	   "presetnames exch get "
+	   "dup "
+	   "stringwidth pop -2 div 0 rmoveto "
+	   "show "
+	   "} for\n", pf );
+
+    fputs( "1 1 25 { dup 29 exch -17 mul 430 add moveto 2 string cvs\n "
+	   "dup stringwidth pop neg 0 rmoveto show } for\n", pf );
+    fputs( "0 1 4 { dup 123 mul 95 add 435 moveto [ (A) (B) (C) (D) (E) ]\n "
+	   "exch get dup stringwidth pop -2 div 0 rmoveto show } for\n", pf );
+    
+    fputs( "0 17 425 { 0 exch moveto 648 0 rlineto stroke } for\n", pf );
+    fputs( "33 123 648 { 0 moveto 0 451 rlineto stroke } for\n", pf );
+    fputs( "0 0 moveto 0 425 lineto stroke\n", pf );
+    fputs( "33 451 moveto 648 451 lineto stroke\n", pf );
+    
+    fputs( "pageobj restore showpage\n"
+	   "%%Trailer\n"
+	   "%%EOF\n", pf );
+
+    if( pclose( pf ) < 0 ) 
+	Message( GTK_WINDOW( pva->pwList ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "%s: %s", pref.szPrint,
+		 g_strerror( errno ) );
 }
 
 static void Refresh( vamp *pva, guint n, GtkWidget *pwItem ) {
@@ -1994,6 +2190,9 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
 	  GTK_STOCK_OPEN },
 	{ "/_File/_Save...", "<control>S", Save, 0, "<StockItem>",
 	  GTK_STOCK_SAVE },
+	{ "/_File/-", NULL, NULL, 0, "<Separator>" },
+	{ "/_File/_Print...", "<control>P", Print, 0, "<StockItem>",
+	  GTK_STOCK_PRINT },
 	{ "/_File/-", NULL, NULL, 0, "<Separator>" },
 	{ "/_File/_Refresh", "<control>R", Refresh, 0, "<StockItem>",
 	  GTK_STOCK_REFRESH },
@@ -2086,7 +2285,7 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
 
 static void LoadPreferences( void ) {
 
-    char *pchRC, *pchData, *pch, ch;
+    char *pchRC, *pchData, *pch, *pchEnd, ch;
     char szKeyword[ 32 ];
     
     pchRC = g_build_filename( g_get_home_dir(), RCFILE, NULL );
@@ -2104,7 +2303,19 @@ static void LoadPreferences( void ) {
 	else if( !strcmp( szKeyword, "log-scroll" ) &&
 		 sscanf( pch, "log-scroll %c", &ch ) == 1 )
 	    pref.fLogScroll = toupper( ch ) == 'Y';
-
+	else if( !strcmp( szKeyword, "print-command" ) &&
+		 isspace( pch[ 13 ] ) ) {
+	    if( !( pchEnd = strchr( pch + 14, '\n' ) ) )
+		pchEnd = strchr( pch + 14, 0 );
+	    g_free( pref.szPrint );
+	    pref.szPrint = g_strndup( pch + 14, pchEnd - pch - 14 );
+	} else if( !strcmp( szKeyword, "print-paper-x" ) &&
+		   sscanf( pch, "print-paper-x %d", &pref.cxPaper ) == 1 )
+	    ;
+	else if( !strcmp( szKeyword, "print-paper-y" ) &&
+		 sscanf( pch, "print-paper-y %d", &pref.cyPaper ) == 1 )
+	    ;
+			  
 	if( ( pch = strchr( pch, '\n' ) ) )
 	    pch++;
     }
@@ -2203,6 +2414,8 @@ extern int main( int argc, char *argv[] ) {
     va.plsLog = NULL;
     va.fClipboard = FALSE;
 
+    pref.szPrint = g_strdup( "lpr" );
+    
     LoadPreferences();
     
     while( ( ch = getopt_long( argc, argv, "c:d:hnv", ao, NULL ) ) >= 0 )
@@ -2288,9 +2501,8 @@ extern int main( int argc, char *argv[] ) {
 
 /* FIXME when logging MIDI events, don't interpret controller/program names
    on channels other than a V-AMP */
-/* FIXME remember filename, and distinguish save/save as */
+/* FIXME remember filename, distinguish save/save as, and print title */
 /* FIXME import/export patches (.vlb and sysex) */
-/* FIXME add printing */
 /* FIXME allow different devices for in and out */
 /* FIXME make the log window global, not part of vamp */
 /* FIXME add other prefs (e.g. midi device, channel, ... ) */
