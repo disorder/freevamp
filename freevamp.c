@@ -206,6 +206,10 @@ extern char szCopying[], szWarranty[];
 #define PRINT_AREA_X 451
 #define PRINT_AREA_Y 648
 
+#define VLB_HEADER_SIZE 16
+#define VLB_PATCH_SIZE 276
+#define VLB_PATCH_OFFSET 220
+
 typedef struct _vamp {
     int h; /* MIDI device file descriptor */
     GIOChannel *pioc;
@@ -295,11 +299,51 @@ static char achDefaultParm[ NUM_PARMS ] = {
 static preferences pref = { FALSE, TRUE, 100, PAPER_ISO_A4_X, PAPER_ISO_A4_Y,
 			    NULL };
 
-static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
-		     char *szFormat, ... ) G_GNUC_PRINTF( 4, 5 );
+static char *PreEffectsName( int i ) {
+
+    return ( i < 0 || i > 2 ) ? NULL : aszPreEffectsName[ i ];
+}
+
+static char *ModulationName( int i ) {
+
+    return ( i < 0 || i > 6 ) ? NULL : aszModulationName[ i ];
+}
+
+static char *DelayName( int i ) {
+
+    return ( i < 0 || i > 2 ) ? NULL : aszDelayName[ i ];
+}
+
+static char *ReverbName( int i ) {
+
+    return ( i < 0 || i > 8 ) ? NULL : aszReverbName[ i ];
+}
+
+static char *AmpName( int i ) {
+
+    if( i < 0x10 )
+	return aszAmpName[ ( i << 1 ) + 1 ];
+    else if( i < 0x20 )
+	return aszAmpName[ ( ( i & 0x0F ) << 1 ) + 2 ];
+    else
+	return aszAmpName[ 0 ];
+}
+
+static char *CabinetName( int i ) {
+
+    return ( i < 0 || i > 15 ) ? NULL : aszCabinetName[ i ];
+}
+
+static char *EffectsAssignName( int i ) {
+
+    return ( i < 0 || i > 15 ) ? NULL : aszEffectsAssignName[ i ];
+}
 
 static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
-		     char *szFormat, ... ) {
+		    char *szFormat, ... ) G_GNUC_PRINTF( 4, 5 );
+
+static int Message( GtkWindow *pwParent, GtkMessageType mt, GtkButtonsType bt,
+		    char *szFormat, ... ) {
     
     va_list val;
     char *pch;
@@ -1111,7 +1155,7 @@ static void UpdateEditorWindow( GtkWidget *pw, char achPreset[ NUM_PARMS ],
 				 achPreset[ PARM_FX_MIX_ASSIGN ] );
     
     /* Name */
-    pch = g_strdup_printf( "Free V-AMP - %s\n", PresetName( achPreset ) );
+    pch = g_strdup_printf( "Free V-AMP - %s", PresetName( achPreset ) );
     gtk_window_set_title( GTK_WINDOW( pw ), pch );
     g_free( pch );
 
@@ -1293,15 +1337,168 @@ static void PopulateMenu( GtkWidget *pw, editorwindow *pew, char **ppch,
     gtk_option_menu_set_menu( GTK_OPTION_MENU( pw ), pwMenu );
 }
 
-static void CloseEditor( GtkWidget *pw, gint nResponse, vamp *pva ) {
+static void SelectPatch( GtkWidget *ptv, GtkTreePath *ptp, GtkTreeViewColumn
+			 *ptvc, GtkWidget *pw ) {
+
+    gtk_dialog_response( GTK_DIALOG( pw ), GTK_RESPONSE_OK );
+}
+
+static int ImportPatch( vamp *pva, char achPreset[ NUM_PARMS ] ) {
+    
+    GtkWidget *pw, *pwList, *pwScrolled;
+    GtkListStore *pls;
+    GtkTreeIter ti;
+    GtkTreePath *ptp;
+    const char *pch;
+    int i, c, h;
+    struct stat st;
+    char *pchFile;
+    
+    pw = gtk_file_selection_new( "Free V-AMP - Open" );
+    
+    gtk_window_set_transient_for( GTK_WINDOW( pw ),
+				  GTK_WINDOW( pva->pwEditor ) );
+    gtk_widget_show_all( pw );
+    
+    if( gtk_dialog_run( GTK_DIALOG( pw ) ) != GTK_RESPONSE_OK ) {
+	gtk_widget_destroy( pw );
+	return -1;
+    }
+    
+    pch = gtk_file_selection_get_filename( GTK_FILE_SELECTION( pw ) );
+    
+    gtk_widget_destroy( pw );
+
+    if( ( h = open( pch, O_RDONLY ) ) < 0 ) {
+	Message( GTK_WINDOW( pva->pwEditor ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "%s: %s", pch, g_strerror( errno ) );
+	return -1;
+    }
+
+    if( fstat( h, &st ) < 0 ) {
+	Message( GTK_WINDOW( pva->pwEditor ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "%s: %s", pch, g_strerror( errno ) );
+	return -1;
+    }
+
+    if( st.st_size == NUM_PRESETS * NUM_PARMS ) {
+	/* Raw V-AMP format */
+	c = NUM_PRESETS;
+	
+	pchFile = g_alloca( NUM_PRESETS * NUM_PARMS );
+	if( read( h, pchFile, NUM_PRESETS * NUM_PARMS ) !=
+	    NUM_PRESETS * NUM_PARMS ) {
+	    Message( GTK_WINDOW( pva->pwEditor ), GTK_MESSAGE_ERROR,
+		     GTK_BUTTONS_CLOSE, "%s: %s", pch, g_strerror( errno ) );
+	    return -1;
+	}
+    } else if( !( ( st.st_size - VLB_HEADER_SIZE ) % VLB_PATCH_SIZE ) ) {
+	/* VALB format */
+	if( !( c = ( st.st_size - VLB_HEADER_SIZE ) / VLB_PATCH_SIZE ) )
+	    goto bad_format;
+
+	pchFile = g_alloca( st.st_size );
+	if( read( h, pchFile, st.st_size ) != st.st_size ) {
+	    Message( GTK_WINDOW( pva->pwEditor ), GTK_MESSAGE_ERROR,
+		     GTK_BUTTONS_CLOSE, "%s: %s", pch, g_strerror( errno ) );
+	    return -1;
+	}
+
+	if( memcmp( pchFile, "VALB", 4 ) )
+	    goto bad_format;
+
+	for( i = 0; i < c; i++ )
+	    memcpy( pchFile + i * NUM_PARMS, pchFile + VLB_HEADER_SIZE +
+		    i * VLB_PATCH_SIZE + VLB_PATCH_OFFSET, NUM_PARMS );
+    } else {
+    bad_format:
+	Message( GTK_WINDOW( pva->pwEditor ), GTK_MESSAGE_ERROR,
+		 GTK_BUTTONS_CLOSE, "%s: not a valid V-AMP presets file",
+		 pch );
+	return -1;
+    }
+
+    pw = gtk_dialog_new_with_buttons( "Free V-AMP - Open", /* FIXME filename */
+				      NULL, 0,
+				      GTK_STOCK_OK, GTK_RESPONSE_OK,
+				      GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
+				      NULL );
+
+    pls = gtk_list_store_new( 1, G_TYPE_STRING );
+    pwScrolled = gtk_scrolled_window_new( NULL, NULL );
+    gtk_scrolled_window_set_policy( GTK_SCROLLED_WINDOW( pwScrolled ),
+				    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC );
+    gtk_container_add( GTK_CONTAINER( GTK_DIALOG( pw )->vbox ), pwScrolled );
+    
+    pwList = gtk_tree_view_new_with_model( GTK_TREE_MODEL( pls ) );
+    g_object_unref( pls );
+    gtk_container_add( GTK_CONTAINER( pwScrolled ), pwList );
+
+    gtk_tree_selection_set_mode(
+	gtk_tree_view_get_selection( GTK_TREE_VIEW( pwList ) ),
+	GTK_SELECTION_BROWSE );
+    gtk_tree_view_set_headers_visible( GTK_TREE_VIEW( pwList ), FALSE );
+    gtk_tree_view_insert_column_with_attributes( GTK_TREE_VIEW( pwList ),
+						 -1, NULL,
+						 gtk_cell_renderer_text_new(),
+						 "text", 0, NULL );
+    
+    for( i = 0; i < c; i++ ) {
+	gtk_list_store_append( GTK_LIST_STORE( pls ), &ti );
+	gtk_list_store_set( GTK_LIST_STORE( pls ), &ti, 0,
+			    PresetName( pchFile + i * NUM_PARMS ), -1 );
+    }
+
+    gtk_window_set_default_size( GTK_WINDOW( pw ), -1, 300 );
+    gtk_widget_show_all( pw );
+
+    g_signal_connect( pwList, "row-activated", G_CALLBACK( SelectPatch ),
+		      pw );
+    
+    if( gtk_dialog_run( GTK_DIALOG( pw ) ) != GTK_RESPONSE_OK ) {
+	gtk_widget_destroy( pw );
+	return -1;
+    }
+    
+    gtk_tree_selection_get_selected(
+	gtk_tree_view_get_selection( GTK_TREE_VIEW( pwList ) ),
+	NULL, &ti );
+
+    ptp = gtk_tree_model_get_path( GTK_TREE_MODEL( pls ), &ti );
+    memcpy( achPreset, pchFile + gtk_tree_path_get_indices( ptp )[ 0 ] *
+	    NUM_PARMS, NUM_PARMS );
+
+    gtk_widget_destroy( pw );
+
+    return 0;
+}
+
+#define EDITOR_RESPONSE_OPEN 1
+
+static void EditorResponse( GtkWidget *pw, gint nResponse, vamp *pva ) {
 
     char *pchPreset = pva->achPreset[ (int) pva->iProgram ];
     
-    if( nResponse == GTK_RESPONSE_APPLY ) {
+    switch( nResponse ) {
+    case EDITOR_RESPONSE_OPEN:
+	if( !ImportPatch( pva, pva->achPreset[ PRESET_CURRENT ] ) ) {
+	    WritePreset( pva, PRESET_CURRENT,
+			 pva->achPreset[ PRESET_CURRENT ] );
+	    RequestPreset( pva, GTK_WINDOW( pva->pwList ), PRESET_CURRENT,
+			   pva->achPreset[ PRESET_CURRENT ] );
+			   
+	    if( pva->pwEditor )
+		UpdateEditorWindow( pva->pwEditor,
+				    pva->achPreset[ PRESET_CURRENT ], pva );
+	}
+	
+	break;
+
+    case GTK_RESPONSE_APPLY:
 	if( pva->h >= 0 ) {
 	    WritePreset( pva, pva->iProgram,
 			 pva->achPreset[ PRESET_CURRENT ] );
-    
+	    
 	    RequestPreset( pva, GTK_WINDOW( pva->pwList ), pva->iProgram,
 			   pchPreset );
 	} else
@@ -1310,9 +1507,10 @@ static void CloseEditor( GtkWidget *pw, gint nResponse, vamp *pva ) {
 	gtk_label_set_text( GTK_LABEL( gtk_bin_get_child( GTK_BIN(
 	    pva->plw->apw[ (int) pva->iProgram ] ) ) ),
 			    PresetName( pchPreset ) );
+	/* fall through */
+    default:
+	gtk_widget_destroy( pw );
     }
-    
-    gtk_widget_destroy( pw );
 }
 
 static GtkWidget *CreateEditorWindow( vamp *pva,
@@ -1326,6 +1524,8 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
 	return NULL;
 	
     pwWindow = gtk_dialog_new_with_buttons( PresetName( achPreset ), NULL, 0,
+					    GTK_STOCK_OPEN,
+					    EDITOR_RESPONSE_OPEN,
 					    GTK_STOCK_OK, GTK_RESPONSE_APPLY,
 					    GTK_STOCK_CLOSE,
 					    GTK_RESPONSE_REJECT, NULL );
@@ -1341,7 +1541,7 @@ static GtkWidget *CreateEditorWindow( vamp *pva,
     g_object_set_data( G_OBJECT( pwWindow ), "vamp", pva );
     gtk_window_add_accel_group( GTK_WINDOW( pwWindow ), pva->pag );
     g_signal_connect( G_OBJECT( pwWindow ), "response",
-		       G_CALLBACK( CloseEditor ), pva );
+		       G_CALLBACK( EditorResponse ), pva );
     g_signal_connect_swapped( pwWindow, "destroy", G_CALLBACK( free ), pew );
     
     pwHbox = gtk_hbox_new( FALSE, 0 );
@@ -1556,7 +1756,7 @@ static GtkWidget *CreateLogWindow( vamp *pva ) {
     g_object_add_weak_pointer( G_OBJECT( pwWindow ),
 			       (gpointer *) &pva->pwLog );
     
-    pch = g_strdup_printf( "Free V-AMP - Log (%s)\n", pva->szDevice );
+    pch = g_strdup_printf( "Free V-AMP - Log (%s)", pva->szDevice );
     gtk_window_set_title( GTK_WINDOW( pwWindow ), pch );
     g_free( pch );
 
@@ -2032,8 +2232,39 @@ static void Print( vamp *pva, guint n, GtkWidget *pwItem ) {
     FILE *pf;
     time_t t;
     char *sz, *pch;
-    int i;
-
+    int i, x;
+    static int acxColumn[ 29 ] = {
+	85, /* name */
+	12,
+	12,
+	37, /* pre FX */
+	12,
+	12,
+	12,
+	12,
+	40, /* modulation */
+	12,
+	12,
+	12,
+	12,
+	30, /* delay */
+	12,
+	12,
+	12,
+	12,
+	45, /* reverb */
+	12,
+	55, /* amp */
+	7,
+	12,
+	12,
+	12,
+	12,
+	12,
+	12,
+	65 /* cabinet */
+    };
+    
     if( pref.cxPaper < PRINT_AREA_X || pref.cyPaper < PRINT_AREA_Y ) {
 	Message( GTK_WINDOW( pva->pwList ), GTK_MESSAGE_ERROR,
 		 GTK_BUTTONS_CLOSE, "The paper size selected is too small." );
@@ -2070,21 +2301,14 @@ static void Print( vamp *pva, guint n, GtkWidget *pwItem ) {
 	   "%%DocumentNeededResources: font Helvetica\n"
 	   "%%LanguageLevel: 1\n"
 	   "%%Orientation: Landscape\n"
-	   "%%Pages: 1\n"
+	   "%%Pages: 3\n"
+	   "%%PageOrder: Ascend\n"
 	   "%%EndComments\n"
 	   "%%BeginSetup\n"
 	   "%%IncludeResource: font Helvetica\n"
 	   "%%EndSetup\n", pf );
 
-    fputs( "%%Page: 1 1\n"
-	   "%%BeginPageSetup\n", pf );
-    
-    fprintf( pf, "/pageobj save def 90 rotate %d %d translate 1 setlinecap\n",
-	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1, 
-	     -( ( pref.cxPaper + PRINT_AREA_X ) >> 1 ) );
-    
-    fputs( "%%EndPageSetup\n", pf );
-
+    fputs( "%%BeginProlog\n", pf );
     fputs( "/presetnames [\n", pf );
     for( i = 0; i < NUM_PRESETS; i++ ) {
 	putc( '(', pf );
@@ -2092,8 +2316,61 @@ static void Print( vamp *pva, guint n, GtkWidget *pwItem ) {
 	putc( ')', pf );
 	putc( '\n', pf );
     }
-    fputs( "] def\n", pf );
+    fputs( "] def\n\n", pf );
+
+    fputs( "/settings [\n", pf );
+    for( i = 0; i < NUM_PRESETS; i++ ) {
+	fprintf( pf, "[(%d) (%d) (%s) (%d) (%d) (%d) (%d)\n",
+		 pva->achPreset[ i ][ PARM_NOISE_GATE ],
+		 pva->achPreset[ i ][ PARM_WAH ],
+		 PreEffectsName( pva->achPreset[ i ][ PARM_PRE_FX_TYPE ] ),
+		 pva->achPreset[ i ][ PARM_PRE_FX_1 ],
+		 pva->achPreset[ i ][ PARM_PRE_FX_2 ],
+		 pva->achPreset[ i ][ PARM_PRE_FX_3 ],
+		 pva->achPreset[ i ][ PARM_PRE_FX_4 ] );
+	fprintf( pf, " (%s) (%d) (%d) (%d) (%d) (%s) (%d) (%d) (%d) (%d)\n",
+		 ModulationName( pva->achPreset[ i ][ PARM_POST_FX_MODE ] ),
+		 pva->achPreset[ i ][ PARM_POST_FX_1 ],
+		 pva->achPreset[ i ][ PARM_POST_FX_2 ],
+		 pva->achPreset[ i ][ PARM_POST_FX_3 ],
+		 pva->achPreset[ i ][ PARM_POST_FX ],
+		 DelayName( pva->achPreset[ i ][ PARM_DELAY_TYPE ] ),
+		 pva->achPreset[ i ][ PARM_DELAY_TIME_HI ],
+		 pva->achPreset[ i ][ PARM_DELAY_SPREAD ],
+		 pva->achPreset[ i ][ PARM_DELAY_FEEDBACK ],
+		 pva->achPreset[ i ][ PARM_DELAY_MIX ] );
+	fprintf( pf, " (%s) (%d) (%s) (%s) (%d) (%d) (%d) (%d) (%d) (%d)\n",
+		 ReverbName( pva->achPreset[ i ][ PARM_REVERB_TYPE ] ),
+		 pva->achPreset[ i ][ PARM_REVERB_MIX ],
+		 AmpName( pva->achPreset[ i ][ PARM_AMP_TYPE ] ),
+		 pva->achPreset[ i ][ PARM_DRIVE ] ? "Y" : "",
+		 pva->achPreset[ i ][ PARM_AMP_GAIN ],
+		 pva->achPreset[ i ][ PARM_AMP_BASS ],
+		 pva->achPreset[ i ][ PARM_AMP_MID ],
+		 pva->achPreset[ i ][ PARM_AMP_TREBLE ],
+		 pva->achPreset[ i ][ PARM_AMP_VOL ],
+		 pva->achPreset[ i ][ PARM_AMP_PRESENCE ] );
+	fprintf( pf, " (%s) (%s)]\n",
+		 CabinetName( pva->achPreset[ i ][ PARM_CABINET_TYPE ] ),
+		 EffectsAssignName( pva->achPreset[ i ]
+				    [ PARM_FX_MIX_ASSIGN ] ) );
+    }
+    fputs( "] def\n\n", pf );
     
+    fputs( "/columnpos [\n", pf );
+    for( i = 0, x = 0; i < 29; i++ )
+	fprintf( pf, "%d ", x += acxColumn[ i ] );
+    fputs( "\n] def\n", pf );
+    
+    fputs( "%%EndProlog\n", pf );
+    
+    fputs( "%%Page: 1 1\n"
+	   "%%BeginPageSetup\n", pf );
+    fprintf( pf, "/pageobj save def 90 rotate %d %d translate 1 setlinecap\n",
+	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1, 
+	     -( ( pref.cxPaper + PRINT_AREA_X ) >> 1 ) );
+    fputs( "%%EndPageSetup\n", pf );
+
     fputs( "/Helvetica findfont 9 scalefont setfont\n", pf );
     
     fputs( "0 1 124 { "
@@ -2117,6 +2394,39 @@ static void Print( vamp *pva, guint n, GtkWidget *pwItem ) {
     fputs( "0 0 moveto 0 425 lineto stroke\n", pf );
     fputs( "33 451 moveto 648 451 lineto stroke\n", pf );
     
+    fputs( "pageobj restore showpage\n", pf );
+
+    fputs( "%%Page: 2 2\n"
+	   "%%BeginPageSetup\n", pf );
+    fprintf( pf, "/pageobj save def 90 rotate %d %d translate 1 setlinecap\n",
+	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1, 
+	     -( ( pref.cxPaper + PRINT_AREA_X ) >> 1 ) );
+    fputs( "%%EndPageSetup\n", pf );
+
+    fputs( "/Helvetica findfont 6 scalefont setfont\n", pf );
+    
+    fputs( "0 1 62 {\n"
+	   "  dup 2 exch -6.5 mul 430 add moveto\n"
+	   "  dup presetnames exch get show\n"
+	   "  0 1 28 {\n"
+	   "    dup columnpos exch get 2 index -6.5 mul 430 add moveto\n"
+	   "    settings 2 index get exch get show\n"
+	   "  } for\n"
+	   "} for\n", pf );
+
+    fputs( "pageobj restore showpage\n"
+	   "%%Trailer\n"
+	   "%%EOF\n", pf );
+
+    fputs( "%%Page: 3 3\n"
+	   "%%BeginPageSetup\n", pf );
+    fprintf( pf, "/pageobj save def 90 rotate %d %d translate 1 setlinecap\n",
+	     ( pref.cyPaper - PRINT_AREA_Y ) >> 1, 
+	     -( ( pref.cxPaper + PRINT_AREA_X ) >> 1 ) );
+    fputs( "%%EndPageSetup\n", pf );
+
+    /* FIXME */
+
     fputs( "pageobj restore showpage\n"
 	   "%%Trailer\n"
 	   "%%EOF\n", pf );
@@ -2239,7 +2549,7 @@ static GtkWidget *CreateListWindow( vamp *pva ) {
     gtk_widget_set_sensitive( plw->pwPaste = gtk_item_factory_get_item(
 				  pif, "/Edit/Paste" ), FALSE );
 
-    pch = g_strdup_printf( "Free V-AMP - %s\n", pva->szDevice );
+    pch = g_strdup_printf( "Free V-AMP - %s", pva->szDevice );
     gtk_window_set_title( GTK_WINDOW( pwWindow ), pch );
     g_free( pch );
 
@@ -2502,7 +2812,11 @@ extern int main( int argc, char *argv[] ) {
 /* FIXME when logging MIDI events, don't interpret controller/program names
    on channels other than a V-AMP */
 /* FIXME remember filename, distinguish save/save as, and print title */
-/* FIXME import/export patches (.vlb and sysex) */
+/* FIXME add other import formats (e.g. sysex) */
+/* FIXME make "open" read all file formats */
 /* FIXME allow different devices for in and out */
 /* FIXME make the log window global, not part of vamp */
 /* FIXME add other prefs (e.g. midi device, channel, ... ) */
+/* FIXME check that no bytes > 0x7F are sent with MIDI data */
+/* FIXME when changing between auto wah/compressor, first param doesn't update
+   until mouse moves over it */
