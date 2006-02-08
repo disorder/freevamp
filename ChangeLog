@@ -1,3 +1,7 @@
+Fri Jan 24 09:59:53 2003  Gary Wong  <gtw@gnu.org>
+
+	* freevamp.c: Internationali[sz]ed.
+
 2003-01-23  gettextize  <bug-gnu-gettext@gnu.org>
 
 	* Makefile.am (SUBDIRS): New variable.
