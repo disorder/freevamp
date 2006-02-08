@@ -1,3 +1,8 @@
+Tue Feb  7 20:14:15 2006  Gary Wong  <gtw@gnu.org>
+
+	* configure.in: Version 0.9.3 pre-released.
+	* freevamp.c: Don't disable deprecated functions.
+
 Fri Jan 24 09:59:53 2003  Gary Wong  <gtw@gnu.org>
 
 	* freevamp.c: Internationali[sz]ed.

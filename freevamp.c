@@ -19,11 +19,6 @@
  * $Id$
  */
 
-#define G_DISABLE_DEPRECATED 1
-#define GDK_DISABLE_DEPRECATED 1
-#define GDK_PIXBUF_DISABLE_DEPRECATED 1
-#define GTK_DISABLE_DEPRECATED 1
-
 #include "config.h"
 
 #include <ctype.h>
@@ -3186,3 +3181,4 @@ extern int main( int argc, char *argv[] ) {
    until mouse moves over it (dependent on GTK+ version?) */
 /* FIXME allow printing only a subset of pages */
 /* FIXME allow selecting/copying from MIDI log */
+/* FIXME add tooltips to editor window widgets */
