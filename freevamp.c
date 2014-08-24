@@ -808,6 +808,33 @@ static void HandleSysex( vamp *pva, unsigned char ch, void *p,
 }
 
 static unsigned char *ReadSysex( vamp *pva, GtkWindow *pwParent, int *cb,
+                                 int cbExpected ) {
+        unsigned char achx[1024];
+        unsigned char *pchx = malloc(8192);
+        if (pchx == NULL) abort();
+        int  n;
+        int total = 0;
+        while ((n = read(pva->h, achx, 1024))) {
+                //fprintf(stderr, "%d total ", total+n);
+                int i;
+                for (i=0; i<n; i++) {
+                        if (achx[i] == MIDI_SYSEX_END) {
+                                goto END;
+                        }
+                        if (achx[i] == MIDI_SYSEX) {
+                                continue;
+                        }
+                        pchx[total] = achx[i];
+                        //fprintf(stderr, "%X ", pchx[total]);
+                        total += 1;
+                }
+        }
+END:
+        *cb = total;
+        return pchx;
+}
+
+static unsigned char *ReadSysex_( vamp *pva, GtkWindow *pwParent, int *cb,
 				 int cbExpected ) {
 
     sysexstate ses;
@@ -3014,7 +3041,6 @@ static void HandleProgramChange( vamp *pva, char iProgram ) {
 
 static gboolean ReadIOC( GIOChannel *piocSource, GIOCondition ioc,
 			  vamp *pva ) {
-    
     if( ReadMIDI( pva ) < 0 ) {
 	Message( pva->pwList ? GTK_WINDOW( pva->pwList ) : NULL,
 		 GTK_MESSAGE_ERROR, GTK_BUTTONS_CLOSE,
